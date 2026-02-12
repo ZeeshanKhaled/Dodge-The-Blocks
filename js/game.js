@@ -1,6 +1,5 @@
 // js/game.js
 document.addEventListener("DOMContentLoaded", () => {
-  // ---------- DOM ----------
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
 
@@ -32,17 +31,123 @@ document.addEventListener("DOMContentLoaded", () => {
   const previewCanvas = document.getElementById("preview");
   const pctx = previewCanvas.getContext("2d");
 
-  // Optional jetpack image (put file in: images/jetpack.png)
+  // ✅ controller status (from HTML)
+  const padStatusEl = document.getElementById("padStatus");
+
+  // ✅ Fullscreen (fullscreen ONLY the game stage)
+  const fsBtn = document.getElementById("fsBtn");
+  const gameStageEl = document.getElementById("gameStage"); // add id="gameStage" on <section class="game-stage">
+  function setFsUi() {
+    if (!fsBtn) return;
+    const on = !!document.fullscreenElement;
+    fsBtn.textContent = on ? "Exit Fullscreen" : "Fullscreen";
+  }
+  async function toggleFullscreen() {
+    try {
+      if (!document.fullscreenElement) {
+        // ✅ fullscreen the game stage (canvas + overlays), not the whole page
+        await (gameStageEl || document.documentElement).requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // ignore
+    }
+    setFsUi();
+  }
+  if (fsBtn) fsBtn.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", setFsUi);
+
+  // --- Images ---
   const jetpackImg = new Image();
-  jetpackImg.src = "images/jetpack.png";
+  jetpackImg.src = "Images/jetpack.png";
   let jetpackImgReady = false;
   jetpackImg.onload = () => (jetpackImgReady = true);
 
-  // ---------- Helpers ----------
+  const ghostImg = new Image();
+  ghostImg.src = "Images/Ghost.png";
+  let ghostImgReady = false;
+  ghostImg.onload = () => (ghostImgReady = true);
+
+  const rocketCharImg = new Image();
+  rocketCharImg.src = "Images/Rocket.png";
+  let rocketCharImgReady = false;
+  rocketCharImg.onload = () => (rocketCharImgReady = true);
+
+  // ✅ New character images
+  const ufoImg = new Image();
+  ufoImg.src = "Images/UFO.png";
+  let ufoImgReady = false;
+  ufoImg.onload = () => (ufoImgReady = true);
+
+  const footballImg = new Image();
+  footballImg.src = "Images/Football.png";
+  let footballImgReady = false;
+  footballImg.onload = () => (footballImgReady = true);
+
+  const basketballImg = new Image();
+  basketballImg.src = "Images/Basketball.png";
+  let basketballImgReady = false;
+  basketballImg.onload = () => (basketballImgReady = true);
+
+  const golfballImg = new Image();
+  golfballImg.src = "Images/Golfball.png";
+  let golfballImgReady = false;
+  golfballImg.onload = () => (golfballImgReady = true);
+
+  const diaSwordImg = new Image();
+  diaSwordImg.src = "Images/DiaSword.png";
+  let diaSwordImgReady = false;
+  diaSwordImg.onload = () => (diaSwordImgReady = true);
+
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const rand = (a, b) => a + Math.random() * (b - a);
 
-  // ---------- Storage ----------
+  // ✅ Controller (Gamepad API)
+  const gamepadState = {
+    ax: 0,
+    ay: 0,
+    deadzone: 0.18,
+  };
+
+  function readGamepad() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const gp = pads && pads[0];
+
+    if (!gp) {
+      gamepadState.ax = 0;
+      gamepadState.ay = 0;
+
+      if (padStatusEl) {
+        padStatusEl.textContent = "• Controller: Not connected";
+        padStatusEl.classList.remove("is-connected");
+      }
+      return;
+    }
+
+    if (padStatusEl) {
+      padStatusEl.textContent = "• Controller: Connected";
+      padStatusEl.classList.add("is-connected");
+    }
+
+    let x = gp.axes[0] || 0;
+    let y = gp.axes[1] || 0;
+
+    const dz = gamepadState.deadzone;
+    if (Math.hypot(x, y) < dz) {
+      x = 0;
+      y = 0;
+    }
+
+    gamepadState.ax = x;
+    gamepadState.ay = y;
+
+    if (gp.buttons?.[0]?.pressed) startGame();
+    if (gp.buttons?.[9]?.pressed) {
+      if (state.startedOnce && !state.gameOver) state.paused = !state.paused;
+    }
+  }
+
   const LS = {
     BEST: "dodge_best",
     WALLET: "dodge_wallet_stars",
@@ -65,7 +170,6 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.setItem(key, JSON.stringify(value));
   }
 
-  // ---------- Colours ----------
   const COLOURS = {
     red: "#ff4d4d",
     orange: "#ff9c3a",
@@ -76,7 +180,6 @@ document.addEventListener("DOMContentLoaded", () => {
     pink: "#ff7ad9",
   };
 
-  // Opposites for hazards
   const OPPOSITE = {
     red: "blue",
     blue: "red",
@@ -89,23 +192,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const STANDARD_SHAPES = new Set(["orb", "triangle", "diamond", "hex"]);
 
-  // ---------- Difficulty ----------
   const DIFFICULTIES = {
     easy: { enemySpeedMult: 0.85, spawnMult: 0.8, scoreMult: 0.9 },
     normal: { enemySpeedMult: 1.0, spawnMult: 1.0, scoreMult: 1.0 },
     hard: { enemySpeedMult: 1.2, spawnMult: 1.25, scoreMult: 1.15 },
   };
 
-  // ---------- Natural randomness for spawns ----------
   function nextDelay(mean, min, max) {
     const u = Math.max(1e-6, Math.random());
     const exp = -Math.log(u) * mean;
     return clamp(exp, min, max);
   }
 
-  const STAR_MEAN = 11; // ⭐ more frequent
-  const JETPACK_MEAN = 30; // 🚀 old star-ish pace
-  const SHIELD_MEAN = 22; // 🛡
+  const STAR_MEAN = 11;
+  const JETPACK_MEAN = 30;
+  const SHIELD_MEAN = 22;
 
   const nextStarDelay = () => nextDelay(STAR_MEAN, 6, 18);
   const nextJetpackDelay = () => nextDelay(JETPACK_MEAN, 16, 48);
@@ -115,7 +216,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const SHIELD_DOUBLE_CHANCE = 0.04;
   const JETPACK_DOUBLE_CHANCE = 0.03;
 
-  // ---------- Characters / Shop ----------
   const CHARACTERS = [
     { id: "orb", name: "Orb", cost: 0, symbol: "●" },
     { id: "triangle", name: "Triangle", cost: 0, symbol: "▲" },
@@ -123,8 +223,14 @@ document.addEventListener("DOMContentLoaded", () => {
     { id: "hex", name: "Hex", cost: 0, symbol: "⬡" },
 
     { id: "shuriken", name: "Shuriken", cost: 20, symbol: "✦" },
-    { id: "ghost", name: "Ghost Orb", cost: 30, symbol: "☁" },
+    { id: "ghost", name: "Ghost", cost: 30, symbol: "👻" },
     { id: "rocket", name: "Rocket", cost: 40, symbol: "🚀" },
+
+    { id: "ufo", name: "UFO", cost: 45, symbol: "🛸" },
+    { id: "football", name: "Football", cost: 50, symbol: "⚽" },
+    { id: "basketball", name: "Basketball", cost: 55, symbol: "🏀" },
+    { id: "golfball", name: "Golf Ball", cost: 60, symbol: "⛳" },
+    { id: "diasword", name: "Diamond Sword", cost: 70, symbol: "🗡" },
   ];
 
   const DEFAULT_UNLOCKED = ["orb", "triangle", "diamond", "hex"];
@@ -135,37 +241,26 @@ document.addEventListener("DOMContentLoaded", () => {
     return CHARACTERS.find((c) => c.id === id) || CHARACTERS[0];
   }
 
-  // ---------- Game State ----------
   const state = {
     running: false,
     paused: false,
     gameOver: false,
     startedOnce: false,
-
     t: 0,
     score: 0,
     best: Number(localStorage.getItem(LS.BEST) || 0),
     lastTime: performance.now(),
-
     keys: new Set(),
-
     hazards: [],
     spawnTimer: 0,
-
-    // ⭐ currency
     stars: [],
     starTimer: nextStarDelay(),
     runStars: 0,
     walletStars: Number(localStorage.getItem(LS.WALLET) || 0),
-
-    // 🛡
     shields: [],
     shieldSpawnTimer: nextShieldDelay(),
-
-    // 🚀
     jetpacks: [],
     jetpackSpawnTimer: nextJetpackDelay(),
-
     difficultyKey: "normal",
     difficultyRamp: 1,
   };
@@ -175,18 +270,14 @@ document.addEventListener("DOMContentLoaded", () => {
     y: canvas.height / 2,
     r: 14,
     baseSpeed: 260,
-
-    speedBoostTimer: 0, // 🚀
-    shieldTimer: 0, // 🛡
-
+    speedBoostTimer: 0,
+    shieldTimer: 0,
     shape: localStorage.getItem(LS.SELECTED) || "orb",
     colour: localStorage.getItem(LS.COLOUR) || "blue",
   };
 
-  // ✅ SHOP selection is separate from equipped character
   let shopSelectedId = player.shape;
 
-  // ---------- UI init ----------
   bestEl.textContent = String(state.best);
   scoreEl.textContent = "0";
   starsEl.textContent = String(state.walletStars);
@@ -194,21 +285,29 @@ document.addEventListener("DOMContentLoaded", () => {
   difficultyEl.value = state.difficultyKey;
   colourSelect.value = player.colour;
 
-  // ---------- Colour logic ----------
   function getPlayerColourHex() {
     if (STANDARD_SHAPES.has(player.shape)) return COLOURS[player.colour] || COLOURS.blue;
     if (player.shape === "shuriken") return "#cfd8ff";
     if (player.shape === "ghost") return "#aee8ff";
     if (player.shape === "rocket") return "#ff6a7d";
+    if (player.shape === "ufo") return "#b9ffcc";
+    if (player.shape === "football") return "#d4a574";
+    if (player.shape === "basketball") return "#ff9c3a";
+    if (player.shape === "golfball") return "#e8ecff";
+    if (player.shape === "diasword") return "#7cf7ff";
     return COLOURS.blue;
   }
 
   function getPreviewColourHex(previewShape) {
-    // Preview uses standard colour if preview is standard; otherwise fixed per special character
     if (STANDARD_SHAPES.has(previewShape)) return COLOURS[player.colour] || COLOURS.blue;
     if (previewShape === "shuriken") return "#cfd8ff";
     if (previewShape === "ghost") return "#aee8ff";
     if (previewShape === "rocket") return "#ff6a7d";
+    if (previewShape === "ufo") return "#b9ffcc";
+    if (previewShape === "football") return "#d4a574";
+    if (previewShape === "basketball") return "#ff9c3a";
+    if (previewShape === "golfball") return "#e8ecff";
+    if (previewShape === "diasword") return "#7cf7ff";
     return COLOURS.blue;
   }
 
@@ -217,7 +316,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return COLOURS[oppKey] || "#ff4d4d";
   }
 
-  // ---------- Wallet ----------
   function addWalletStars(amount) {
     state.walletStars += amount;
     starsEl.textContent = String(state.walletStars);
@@ -232,23 +330,16 @@ document.addEventListener("DOMContentLoaded", () => {
     syncShopUI();
   }
 
-  // ---------- Shop / Character select ----------
   function buildCharacterSelect() {
     characterSelect.innerHTML = "";
-
     for (const c of CHARACTERS) {
       const opt = document.createElement("option");
       opt.value = c.id;
-
       const locked = unlocked.has(c.id) ? "" : " 🔒";
       const price = c.cost > 0 ? ` (${c.cost}★)` : "";
       opt.textContent = `${c.name} ${c.symbol}${price}${locked}`;
-
-      // ✅ DO NOT disable locked options
       characterSelect.appendChild(opt);
     }
-
-    // keep dropdown on current shop selection
     if (!CHARACTERS.some((c) => c.id === shopSelectedId)) shopSelectedId = "orb";
     characterSelect.value = shopSelectedId;
   }
@@ -282,7 +373,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ---------- Overlays ----------
   function syncStartUi() {
     const show = !state.startedOnce && !state.running && !state.gameOver;
     startUi.style.display = show ? "flex" : "none";
@@ -302,27 +392,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ---------- Core ----------
   function reset(toStartScreen = true) {
     state.paused = false;
     state.gameOver = false;
-
     state.t = 0;
     state.score = 0;
     state.spawnTimer = 0;
-
     state.hazards = [];
-
     state.stars = [];
     state.starTimer = nextStarDelay();
     state.runStars = 0;
-
     state.shields = [];
     state.shieldSpawnTimer = nextShieldDelay();
-
     state.jetpacks = [];
     state.jetpackSpawnTimer = nextJetpackDelay();
-
     scoreEl.textContent = "0";
 
     player.x = canvas.width / 2;
@@ -360,7 +443,6 @@ document.addEventListener("DOMContentLoaded", () => {
     syncGameOverUi();
   }
 
-  // ---------- Spawning ----------
   function spawnHazard() {
     const side = Math.floor(rand(0, 4));
     const size = rand(18, 44);
@@ -430,7 +512,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ---------- Collision ----------
   function circleRectCollide(cx, cy, cr, rx, ry, rw, rh) {
     const closestX = clamp(cx, rx, rx + rw);
     const closestY = clamp(cy, ry, ry + rh);
@@ -439,7 +520,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return dx * dx + dy * dy <= cr * cr;
   }
 
-  // ---------- Draw helpers ----------
   function drawStar(x, y, outerR, innerR, rotation) {
     ctx.save();
     ctx.translate(x, y);
@@ -497,7 +577,6 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.save();
     ctx.translate(x, y + bob);
 
-    // glow
     ctx.globalAlpha = 0.2 * blink;
     ctx.fillStyle = "#ffb24d";
     ctx.beginPath();
@@ -506,7 +585,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     ctx.globalAlpha = 1 * blink;
 
-    // ✅ Use image if available, otherwise fallback symbol
     if (jetpackImgReady && jetpackImg.naturalWidth > 0) {
       const w = r * 2.1;
       const h = r * 2.1;
@@ -521,6 +599,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     ctx.restore();
     ctx.globalAlpha = 1;
+  }
+
+  function drawImageChar(context, img, ready, x, y, targetH) {
+    if (!ready || img.naturalWidth <= 0) return false;
+    const w = targetH * (img.naturalWidth / img.naturalHeight);
+    context.drawImage(img, x - w / 2, y - targetH / 2, w, targetH);
+    return true;
   }
 
   function drawCharacter(context, shape, x, y, r, t, color) {
@@ -598,50 +683,52 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (shape === "ghost") {
-      context.beginPath();
-      context.arc(x, y - r * 0.15, r, Math.PI, 0);
-
-      const baseY = y + r * 0.9;
-      const leftX = x - r;
-      const rightX = x + r;
-
-      for (let i = 0; i <= 4; i++) {
-        const px = leftX + (i / 4) * (rightX - leftX);
-        const wave = Math.sin(t * 6 + i * 1.2) * (r * 0.12);
-        context.lineTo(px, baseY + wave);
+      if (drawImageChar(context, ghostImg, ghostImgReady, x, y, r * 2.6)) {
+        context.restore();
+        return;
       }
-      context.closePath();
-      context.fill();
-
-      context.globalAlpha = 0.55;
-      context.fillStyle = "rgba(0,0,0,0.75)";
-      context.beginPath();
-      context.arc(x - r * 0.35, y - r * 0.05, r * 0.16, 0, Math.PI * 2);
-      context.arc(x + r * 0.35, y - r * 0.05, r * 0.16, 0, Math.PI * 2);
-      context.fill();
-
-      context.restore();
-      context.globalAlpha = 1;
-      return;
     }
 
     if (shape === "rocket") {
-      context.beginPath();
-      context.moveTo(x, y - r * 1.15);
-      context.quadraticCurveTo(x + r * 0.95, y, x, y + r * 1.15);
-      context.quadraticCurveTo(x - r * 0.95, y, x, y - r * 1.15);
-      context.closePath();
-      context.fill();
+      if (drawImageChar(context, rocketCharImg, rocketCharImgReady, x, y, r * 2.8)) {
+        context.restore();
+        return;
+      }
+    }
 
-      context.globalAlpha = 0.25;
-      context.fillStyle = "#ffffff";
-      context.beginPath();
-      context.arc(x, y - r * 0.1, r * 0.28, 0, Math.PI * 2);
-      context.fill();
+    if (shape === "ufo") {
+      if (drawImageChar(context, ufoImg, ufoImgReady, x, y, r * 2.7)) {
+        context.restore();
+        return;
+      }
+    }
 
-      context.globalAlpha = 1;
-      context.restore();
-      return;
+    if (shape === "football") {
+      if (drawImageChar(context, footballImg, footballImgReady, x, y, r * 2.55)) {
+        context.restore();
+        return;
+      }
+    }
+
+    if (shape === "basketball") {
+      if (drawImageChar(context, basketballImg, basketballImgReady, x, y, r * 2.55)) {
+        context.restore();
+        return;
+      }
+    }
+
+    if (shape === "golfball") {
+      if (drawImageChar(context, golfballImg, golfballImgReady, x, y, r * 2.55)) {
+        context.restore();
+        return;
+      }
+    }
+
+    if (shape === "diasword") {
+      if (drawImageChar(context, diaSwordImg, diaSwordImgReady, x, y, r * 3.1)) {
+        context.restore();
+        return;
+      }
     }
 
     context.restore();
@@ -686,9 +773,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ---------- Update ----------
   function update(dt) {
     if (!state.running || state.paused || state.gameOver) return;
+
+    readGamepad();
 
     const diff = DIFFICULTIES[state.difficultyKey] || DIFFICULTIES.normal;
 
@@ -705,23 +793,37 @@ document.addEventListener("DOMContentLoaded", () => {
     const speedBoostMult = player.speedBoostTimer > 0 ? 1.6 : 1.0;
     const speed = player.baseSpeed * (holdingShift ? 1.45 : 1.0) * speedBoostMult;
 
+    let kx = 0,
+      ky = 0;
+    if (state.keys.has("a")) kx -= 1;
+    if (state.keys.has("d")) kx += 1;
+    if (state.keys.has("w")) ky -= 1;
+    if (state.keys.has("s")) ky += 1;
+
+    let gx = gamepadState.ax;
+    let gy = gamepadState.ay;
+
+    const km = Math.hypot(kx, ky);
+    const gm = Math.hypot(gx, gy);
+
     let mx = 0,
       my = 0;
-    if (state.keys.has("a")) mx -= 1;
-    if (state.keys.has("d")) mx += 1;
-    if (state.keys.has("w")) my -= 1;
-    if (state.keys.has("s")) my += 1;
+    if (gm > km) {
+      mx = gx;
+      my = gy;
+    } else if (km > 0) {
+      mx = kx / km;
+      my = ky / km;
+    }
 
-    const mag = Math.hypot(mx, my);
-    if (mag > 0) {
-      player.x += (mx / mag) * speed * dt;
-      player.y += (my / mag) * speed * dt;
+    if (mx || my) {
+      player.x += mx * speed * dt;
+      player.y += my * speed * dt;
     }
 
     player.x = clamp(player.x, player.r, canvas.width - player.r);
     player.y = clamp(player.y, player.r, canvas.height - player.r);
 
-    // hazards
     state.spawnTimer -= dt;
     const spawnEvery = 0.9 / diff.spawnMult;
     if (state.spawnTimer <= 0) {
@@ -730,7 +832,6 @@ document.addEventListener("DOMContentLoaded", () => {
       state.spawnTimer = spawnEvery;
     }
 
-    // ⭐ stars
     state.starTimer -= dt;
     if (state.starTimer <= 0) {
       spawnStarPickup();
@@ -738,7 +839,6 @@ document.addEventListener("DOMContentLoaded", () => {
       state.starTimer = nextStarDelay();
     }
 
-    // 🛡 shields
     state.shieldSpawnTimer -= dt;
     if (state.shieldSpawnTimer <= 0) {
       spawnShieldPickup();
@@ -746,7 +846,6 @@ document.addEventListener("DOMContentLoaded", () => {
       state.shieldSpawnTimer = nextShieldDelay();
     }
 
-    // 🚀 jetpacks
     state.jetpackSpawnTimer -= dt;
     if (state.jetpackSpawnTimer <= 0) {
       spawnJetpackPickup();
@@ -754,14 +853,12 @@ document.addEventListener("DOMContentLoaded", () => {
       state.jetpackSpawnTimer = nextJetpackDelay();
     }
 
-    // hazards update
     for (const h of state.hazards) {
       h.x += h.vx * dt;
       h.y += h.vy * dt;
       h.rot += h.vr * dt;
     }
 
-    // ⭐ stars collect
     state.stars = state.stars.filter((s) => {
       s.spin += dt * 2.0;
       s.pulse += dt * 6.0;
@@ -775,7 +872,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return true;
     });
 
-    // 🛡 shields collect/expire
     state.shields = state.shields.filter((s) => {
       s.pulse += dt * 4.0;
       s.life -= dt;
@@ -787,7 +883,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return s.life > 0;
     });
 
-    // 🚀 jetpacks collect/expire
     state.jetpacks = state.jetpacks.filter((j) => {
       j.pulse += dt * 4.0;
       j.life -= dt;
@@ -799,7 +894,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return j.life > 0;
     });
 
-    // collision if no shield
     if (player.shieldTimer <= 0) {
       for (const h of state.hazards) {
         if (circleRectCollide(player.x, player.y, player.r, h.x, h.y, h.w, h.h)) {
@@ -810,11 +904,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ---------- Draw ----------
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // background dots
     ctx.globalAlpha = 0.25;
     for (let i = 0; i < 80; i++) {
       const x = (i * 113) % canvas.width;
@@ -825,7 +917,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const hazardColor = getHazardColourHex();
 
-    // hazards
     for (const h of state.hazards) {
       ctx.save();
       ctx.translate(h.x + h.w / 2, h.y + h.h / 2);
@@ -840,7 +931,6 @@ document.addEventListener("DOMContentLoaded", () => {
       ctx.restore();
     }
 
-    // stars
     for (const s of state.stars) {
       const pulse = 1 + Math.sin(s.pulse) * 0.12;
 
@@ -856,18 +946,13 @@ document.addEventListener("DOMContentLoaded", () => {
       drawStar(s.x, s.y, s.r * pulse, s.r * 0.5 * pulse, s.spin);
     }
 
-    // shields
     for (const s of state.shields) drawShieldIcon(s.x, s.y, s.r, s.pulse, s.life);
-
-    // jetpacks
     for (const j of state.jetpacks) drawJetpackIcon(j.x, j.y, j.r, j.pulse, j.life);
 
-    // player
     const baseCol = getPlayerColourHex();
     const playerCol = player.speedBoostTimer > 0 ? "#a6ff7c" : baseCol;
     drawCharacter(ctx, player.shape, player.x, player.y, player.r, state.t, playerCol);
 
-    // shield ring (flash last 2s)
     if (player.shieldTimer > 0) {
       const wobble = 1 + Math.sin(state.t * 8) * 0.05;
 
@@ -892,7 +977,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ---------- Loop ----------
   function loop(now) {
     const dt = Math.min(0.033, (now - state.lastTime) / 1000);
     state.lastTime = now;
@@ -907,7 +991,6 @@ document.addEventListener("DOMContentLoaded", () => {
     requestAnimationFrame(loop);
   }
 
-  // ---------- Events ----------
   difficultyEl.addEventListener("change", () => {
     state.difficultyKey = difficultyEl.value;
     state.startedOnce = false;
@@ -917,7 +1000,6 @@ document.addEventListener("DOMContentLoaded", () => {
   characterSelect.addEventListener("change", () => {
     shopSelectedId = characterSelect.value;
 
-    // ✅ Equip immediately ONLY if unlocked
     if (unlocked.has(shopSelectedId)) {
       player.shape = shopSelectedId;
       localStorage.setItem(LS.SELECTED, shopSelectedId);
@@ -942,7 +1024,6 @@ document.addEventListener("DOMContentLoaded", () => {
     unlocked.add(c.id);
     saveJSON(LS.UNLOCKED, Array.from(unlocked));
 
-    // ✅ after purchase: equip it
     player.shape = c.id;
     localStorage.setItem(LS.SELECTED, c.id);
 
@@ -970,6 +1051,12 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
 
+    if (k === "escape" && document.fullscreenElement) {
+      document.exitFullscreen();
+      e.preventDefault();
+      return;
+    }
+
     if (k === "enter" || k === " ") {
       startGame();
       e.preventDefault();
@@ -996,7 +1083,6 @@ document.addEventListener("DOMContentLoaded", () => {
     state.keys.delete(e.key.toLowerCase());
   });
 
-  // ---------- Boot ----------
   buildCharacterSelect();
   syncShopUI();
 
@@ -1004,6 +1090,7 @@ document.addEventListener("DOMContentLoaded", () => {
   drawPreview();
   syncStartUi();
   syncGameOverUi();
+  setFsUi();
 
   requestAnimationFrame(loop);
 });

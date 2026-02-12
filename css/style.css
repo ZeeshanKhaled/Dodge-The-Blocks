@@ -59,6 +59,18 @@ canvas#game{
   line-height:1.35;
 }
 
+/* ✅ controller status */
+.pad-status{
+  opacity:0.85;
+  margin-left:6px;
+  white-space:nowrap;
+}
+.pad-status.is-connected{
+  opacity:1;
+  color:#7dff7a;
+  text-shadow:0 0 18px rgba(125,255,122,0.25);
+}
+
 kbd{
   font:inherit;
   padding:2px 6px;
@@ -429,4 +441,31 @@ canvas#preview{
   background:linear-gradient(180deg, #7cf7ff, #3ad6ff);
   color:#061018;
   box-shadow:0 12px 30px rgba(0,0,0,0.45), 0 0 25px rgba(120,247,255,0.18);
+}
+/* ---------- Fullscreen box ---------- */
+.fs-box{
+  margin-top: 16px;
+  border: 4px solid rgba(128,255,0,0.95);
+  border-radius: 16px;
+  padding: 14px 12px;
+  background: rgba(255,255,255,0.03);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+  backdrop-filter: blur(6px);
+}
+
+.ui-btn--fs{
+  width: 100%;
+  border: 0;
+  background: linear-gradient(180deg, #c9ff3a, #80ff00);
+  color: rgba(0,0,0,0.72);
+  box-shadow:
+    0 14px 35px rgba(0,0,0,0.45),
+    0 0 30px rgba(130,255,0,0.20);
+}
+
+.fs-hint{
+  margin-top: 10px;
+  font-size: 12.5px;
+  opacity: 0.8;
+  text-align: center;
 }
