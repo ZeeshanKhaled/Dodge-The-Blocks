@@ -4,607 +4,129 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dodge the Blocks</title>
-  <style>
-    :root { color-scheme: dark; }
-    body{
-      margin:0;
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-      background:#0b0f19;
-      color:#e8ecff;
-      display:grid;
-      place-items:center;
-      height:100vh;
-      overflow:hidden;
-    }
-    .wrap{ width:min(900px,92vw); }
-    header{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      margin-bottom:10px;
-      gap:10px;
-      flex-wrap:wrap;
-    }
-    .pill{
-      background:rgba(255,255,255,0.06);
-      border:1px solid rgba(255,255,255,0.10);
-      padding:8px 12px;
-      border-radius:999px;
-      backdrop-filter:blur(6px);
-      display:flex;
-      align-items:center;
-      gap:10px;
-      flex-wrap:wrap;
-    }
-    canvas{
-      width:100%;
-      height:auto;
-      background:radial-gradient(1200px 600px at 50% 20%, #141b33, #080b14);
-      border:1px solid rgba(255,255,255,0.10);
-      border-radius:14px;
-      box-shadow:0 20px 60px rgba(0,0,0,0.45);
-      display:block;
-    }
-    .help{
-      opacity:0.85;
-      font-size:0.95rem;
-      line-height:1.35;
-    }
-    kbd{
-      font:inherit;
-      padding:2px 6px;
-      border-radius:6px;
-      background:rgba(255,255,255,0.08);
-      border:1px solid rgba(255,255,255,0.12);
-    }
-    select{
-      background:rgba(255,255,255,0.08);
-      border:1px solid rgba(255,255,255,0.14);
-      color:#e8ecff;
-      border-radius:10px;
-      padding:4px 8px;
-      outline:none;
-    }
-    option{ background:#0b0f19; }
-  </style>
+  <link rel="stylesheet" href="css/style.css" />
 </head>
+
 <body>
   <div class="wrap">
-    <header>
-      <div class="pill">
-        <div><strong>Score:</strong> <span id="score">0</span></div>
-        <div><strong>Best:</strong> <span id="best">0</span></div>
-        <div><strong>Stars:</strong> <span id="stars">0</span></div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <strong>Difficulty:</strong>
-          <select id="difficulty">
-            <option value="easy">Easy</option>
-            <option value="normal" selected>Normal</option>
-            <option value="hard">Hard</option>
-          </select>
+    <!-- LEFT: Game column -->
+    <main class="game-col">
+      <header class="topbar">
+        <div class="pill stats">
+          <div><strong>Score:</strong> <span id="score">0</span></div>
+          <div><strong>Best:</strong> <span id="best">0</span></div>
+          <div><strong>Stars:</strong> <span id="stars">0</span></div>
+
+          <div class="inline">
+            <strong>Difficulty:</strong>
+            <select id="difficulty" aria-label="Difficulty">
+              <option value="easy">Easy</option>
+              <option value="normal" selected>Normal</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
         </div>
+
+        <div class="pill help" aria-label="Controls help">
+          Move: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+          • Boost: <kbd>Shift</kbd>
+          • Pause: <kbd>P</kbd>
+          • Start: <kbd>Enter</kbd>/<kbd>Space</kbd>
+          • Restart: <kbd>R</kbd>
+        </div>
+      </header>
+
+      <section class="game-stage" aria-label="Game">
+        <canvas id="game" width="900" height="520"></canvas>
+
+        <!-- START OVERLAY -->
+        <div id="startUi" class="start-ui" aria-hidden="true">
+          <div class="start-title">
+            Dodge the <span class="blocks-word">Blocks</span>
+          </div>
+
+          <div class="start-sub">
+            Choose difficulty, then press Enter / Space to start
+          </div>
+
+          <button id="startBtn" class="start-btn" type="button">
+            <span class="start-btn__text">Start</span>
+            <span class="start-btn__shine" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <!-- GAME OVER OVERLAY -->
+        <div id="gameOverUi" class="gameover-ui" aria-hidden="true">
+          <div class="gameover-title">Game Over</div>
+
+          <div class="gameover-stats">
+            <div class="stat">
+              <div class="stat__label">Score</div>
+              <div class="stat__value" id="finalScore">0</div>
+            </div>
+            <div class="stat">
+              <div class="stat__label">Best</div>
+              <div class="stat__value" id="finalBest">0</div>
+            </div>
+            <div class="stat">
+              <div class="stat__label">Run Stars</div>
+              <div class="stat__value" id="finalRunStars">0</div>
+            </div>
+            <div class="stat">
+              <div class="stat__label">Wallet</div>
+              <div class="stat__value" id="finalWalletStars">0</div>
+            </div>
+          </div>
+
+          <div class="gameover-actions">
+            <button id="restartBtn" class="ui-btn ui-btn--primary" type="button">Restart</button>
+            <button id="backBtn" class="ui-btn" type="button">Back to Start</button>
+          </div>
+
+          <div class="gameover-hint">
+            Press <b>R</b> to restart • Press <b>Enter</b> / <b>Space</b> to start
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- RIGHT: Loadout panel -->
+    <aside class="side-panel" aria-label="Loadout panel">
+      <h2>Loadout</h2>
+
+      <label for="characterSelect">Character</label>
+      <select id="characterSelect" aria-label="Character"></select>
+
+      <label for="colourSelect" class="mt-12">Colour (standard)</label>
+      <select id="colourSelect" aria-label="Colour">
+        <option value="red">Red</option>
+        <option value="orange">Orange</option>
+        <option value="yellow">Yellow</option>
+        <option value="green">Green</option>
+        <option value="blue" selected>Blue</option>
+        <option value="purple">Purple</option>
+        <option value="pink">Pink</option>
+      </select>
+
+      <div class="shop-row" aria-label="Shop">
+        <div class="shop-meta">
+          <div class="shop-name" id="shopName">—</div>
+          <div class="shop-cost" id="shopCost">—</div>
+        </div>
+        <button id="buyBtn" class="ui-btn ui-btn--shop" type="button">Buy</button>
       </div>
 
-      <div class="pill help">
-        Move: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
-        • Boost: <kbd>Shift</kbd>
-        • Pause: <kbd>P</kbd>
-        • Start: <kbd>Enter</kbd>/<kbd>Space</kbd>
-        • Restart: <kbd>R</kbd>
-      </div>
-    </header>
+      <div class="shop-note" id="shopNote"></div>
 
-    <canvas id="game" width="900" height="520"></canvas>
+      <div class="preview-wrap">
+        <p class="preview-title">Preview</p>
+        <canvas id="preview" width="120" height="120"></canvas>
+      </div>
+
+      <div class="hint">(No square option — you’re dodging the squares 😈)</div>
+    </aside>
   </div>
 
-  <script>
-  document.addEventListener("DOMContentLoaded", () => {
-    // ---------- DOM / Canvas ----------
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
-
-    const scoreEl = document.getElementById("score");
-    const bestEl = document.getElementById("best");
-    const starsEl = document.getElementById("stars");
-    const difficultyEl = document.getElementById("difficulty");
-
-    // ---------- Helpers ----------
-    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-    const rand = (a, b) => a + Math.random() * (b - a);
-
-    // ---------- Difficulty ----------
-    const DIFFICULTIES = {
-      easy:   { enemySpeedMult: 0.85, spawnMult: 0.80, scoreMult: 0.90 },
-      normal: { enemySpeedMult: 1.00, spawnMult: 1.00, scoreMult: 1.00 },
-      hard:   { enemySpeedMult: 1.20, spawnMult: 1.25, scoreMult: 1.15 },
-    };
-
-    // ---------- Game State ----------
-    const state = {
-      running: false,
-      paused: false,
-      gameOver: false,
-      startedOnce: false,
-
-      t: 0,
-      score: 0,
-      best: Number(localStorage.getItem("dodge_best") || 0),
-      lastTime: performance.now(),
-
-      keys: new Set(),
-
-      hazards: [],
-      spawnTimer: 0,
-
-      stars: [],
-      starTimer: 30,         // ⭐ spawn every 30s
-      starsCollected: 0,
-
-      shields: [],
-      shieldSpawnTimer: 22,  // 🛡 spawn schedule
-
-      difficultyKey: "normal",
-      difficultyRamp: 1,
-    };
-
-    const player = {
-      x: canvas.width / 2,
-      y: canvas.height / 2,
-      r: 14,
-      baseSpeed: 260,
-
-      speedBoostTimer: 0, // ⭐ active effect duration
-      shieldTimer: 0,     // 🛡 active effect duration
-    };
-
-    bestEl.textContent = String(state.best);
-    starsEl.textContent = "0";
-    scoreEl.textContent = "0";
-
-    // ---------- Core: Reset / Start / Game Over ----------
-    function reset(toStartScreen = true) {
-      state.paused = false;
-      state.gameOver = false;
-
-      state.t = 0;
-      state.score = 0;
-      state.spawnTimer = 0;
-
-      state.hazards = [];
-      state.stars = [];
-      state.shields = [];
-
-      state.starTimer = 30;
-      state.shieldSpawnTimer = 22;
-
-      state.starsCollected = 0;
-      starsEl.textContent = "0";
-      scoreEl.textContent = "0";
-
-      player.x = canvas.width / 2;
-      player.y = canvas.height / 2;
-      player.speedBoostTimer = 0;
-      player.shieldTimer = 0;
-
-      state.running = !toStartScreen;
-    }
-
-    function startGame() {
-      if (state.gameOver) return;
-      state.running = true;
-      state.startedOnce = true;
-      state.paused = false;
-    }
-
-    function endGame() {
-      state.running = false;
-      state.gameOver = true;
-
-      const s = Math.floor(state.score);
-      if (s > state.best) {
-        state.best = s;
-        localStorage.setItem("dodge_best", String(s));
-        bestEl.textContent = String(s);
-      }
-    }
-
-    // ---------- Spawners ----------
-    function spawnHazard() {
-      const side = Math.floor(rand(0, 4));
-      const size = rand(18, 44);
-      let x, y;
-
-      if (side === 0) { x = rand(0, canvas.width); y = -size; }
-      else if (side === 1) { x = canvas.width + size; y = rand(0, canvas.height); }
-      else if (side === 2) { x = rand(0, canvas.width); y = canvas.height + size; }
-      else { x = -size; y = rand(0, canvas.height); }
-
-      const dx = player.x - x;
-      const dy = player.y - y;
-      const mag = Math.hypot(dx, dy) || 1;
-
-      const diff = DIFFICULTIES[state.difficultyKey] || DIFFICULTIES.normal;
-      const ramp = 1 + (state.difficultyRamp - 1) * 0.18;
-      const speed = rand(140, 220) * ramp * diff.enemySpeedMult;
-
-      state.hazards.push({
-        x, y, w: size, h: size,
-        vx: (dx / mag) * speed + rand(-25, 25),
-        vy: (dy / mag) * speed + rand(-25, 25),
-        rot: rand(0, Math.PI * 2),
-        vr: rand(-2, 2),
-      });
-    }
-
-    function spawnStarPickup() {
-      state.stars.push({
-        x: rand(60, canvas.width - 60),
-        y: rand(60, canvas.height - 60),
-        r: 12,
-        spin: rand(0, Math.PI * 2),
-        pulse: rand(0, Math.PI * 2),
-      });
-    }
-
-    function spawnShieldPickup() {
-      state.shields.push({
-        x: rand(60, canvas.width - 60),
-        y: rand(60, canvas.height - 60),
-        r: 16,
-        pulse: rand(0, Math.PI * 2),
-        life: 5, // ⏳ pickup exists for 5 seconds, then disappears
-      });
-    }
-
-    // ---------- Collision ----------
-    function circleRectCollide(cx, cy, cr, rx, ry, rw, rh) {
-      const closestX = clamp(cx, rx, rx + rw);
-      const closestY = clamp(cy, ry, ry + rh);
-      const dx = cx - closestX;
-      const dy = cy - closestY;
-      return (dx * dx + dy * dy) <= cr * cr;
-    }
-
-    // ---------- Draw helpers ----------
-    function drawStar(x, y, outerR, innerR, rotation) {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(rotation);
-
-      ctx.beginPath();
-      for (let i = 0; i < 10; i++) {
-        const r = (i % 2 === 0) ? outerR : innerR;
-        const a = (Math.PI / 5) * i - Math.PI / 2;
-        const px = Math.cos(a) * r;
-        const py = Math.sin(a) * r;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // ✅ NEW nicer shield icon (still flashes last 2s)
-    function drawShieldIcon(x, y, r, pulse, life) {
-      const flashing = life <= 2;
-      const blink = flashing
-        ? (0.25 + 0.75 * (0.5 + 0.5 * Math.sin(life * 12 * Math.PI)))
-        : 1;
-
-      const scale = 1 + Math.sin(pulse) * 0.06;
-
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(scale, scale);
-
-      // glow
-      ctx.globalAlpha = 0.25 * blink;
-      ctx.fillStyle = "#66b3ff";
-      ctx.beginPath();
-      ctx.arc(0, 0, r * 1.9, 0, Math.PI * 2);
-      ctx.fill();
-
-      // outer crest
-      ctx.globalAlpha = 1 * blink;
-      ctx.fillStyle = "#66b3ff";
-      ctx.beginPath();
-      ctx.moveTo(0, -r * 1.1);
-      ctx.quadraticCurveTo(r * 1.05, -r * 0.7, r * 0.9, -r * 0.05);
-      ctx.quadraticCurveTo(r * 0.85,  r * 0.8, 0,  r * 1.15);
-      ctx.quadraticCurveTo(-r * 0.85, r * 0.8, -r * 0.9, -r * 0.05);
-      ctx.quadraticCurveTo(-r * 1.05, -r * 0.7, 0, -r * 1.1);
-      ctx.closePath();
-      ctx.fill();
-
-      // inner highlight
-      ctx.globalAlpha = 0.35 * blink;
-      ctx.fillStyle = "rgba(255,255,255,1)";
-      ctx.beginPath();
-      ctx.moveTo(0, -r * 0.85);
-      ctx.quadraticCurveTo(r * 0.65, -r * 0.55, r * 0.55, -r * 0.1);
-      ctx.quadraticCurveTo(r * 0.5,   r * 0.55, 0,  r * 0.85);
-      ctx.quadraticCurveTo(-r * 0.25, r * 0.25, -r * 0.2, -r * 0.25);
-      ctx.quadraticCurveTo(-r * 0.15, -r * 0.65, 0, -r * 0.85);
-      ctx.closePath();
-      ctx.fill();
-
-      // outline for crispness
-      ctx.globalAlpha = 0.9 * blink;
-      ctx.strokeStyle = "rgba(102,179,255,1)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.restore();
-      ctx.globalAlpha = 1;
-    }
-
-    function drawOverlay(title, subtitle) {
-      ctx.save();
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.fillStyle = "#e8ecff";
-      ctx.textAlign = "center";
-
-      ctx.font = "700 42px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-      ctx.fillText(title, canvas.width / 2, canvas.height / 2 - 10);
-
-      ctx.font = "400 18px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-      ctx.globalAlpha = 0.9;
-      ctx.fillText(subtitle, canvas.width / 2, canvas.height / 2 + 28);
-
-      ctx.restore();
-    }
-
-    // ---------- Update ----------
-    function update(dt) {
-      if (!state.running || state.paused || state.gameOver) return;
-
-      const diff = DIFFICULTIES[state.difficultyKey] || DIFFICULTIES.normal;
-
-      state.t += dt;
-      state.difficultyRamp = 1 + state.t / 18;
-
-      // score
-      state.score += dt * 10 * diff.scoreMult;
-      scoreEl.textContent = String(Math.floor(state.score));
-
-      // timers
-      if (player.speedBoostTimer > 0) player.speedBoostTimer -= dt;
-      if (player.shieldTimer > 0) player.shieldTimer -= dt;
-
-      // movement (WASD only)
-      const holdingShift = state.keys.has("shift");
-      const speedBoostMult = (player.speedBoostTimer > 0) ? 1.6 : 1.0;
-      const speed = player.baseSpeed * (holdingShift ? 1.45 : 1.0) * speedBoostMult;
-
-      let mx = 0, my = 0;
-      if (state.keys.has("a")) mx -= 1;
-      if (state.keys.has("d")) mx += 1;
-      if (state.keys.has("w")) my -= 1;
-      if (state.keys.has("s")) my += 1;
-
-      const mag = Math.hypot(mx, my);
-      if (mag > 0) {
-        player.x += (mx / mag) * speed * dt;
-        player.y += (my / mag) * speed * dt;
-      }
-
-      player.x = clamp(player.x, player.r, canvas.width - player.r);
-      player.y = clamp(player.y, player.r, canvas.height - player.r);
-
-      // hazards spawn
-      state.spawnTimer -= dt;
-      const spawnEvery = 0.9 / diff.spawnMult;
-      if (state.spawnTimer <= 0) {
-        spawnHazard();
-        if (state.difficultyKey === "hard" && Math.random() < 0.10) spawnHazard();
-        state.spawnTimer = spawnEvery;
-      }
-
-      // star pickup spawn (every 30s)
-      state.starTimer -= dt;
-      if (state.starTimer <= 0) {
-        spawnStarPickup();
-        state.starTimer = 30;
-      }
-
-      // shield pickup spawn schedule
-      state.shieldSpawnTimer -= dt;
-      if (state.shieldSpawnTimer <= 0) {
-        spawnShieldPickup();
-        state.shieldSpawnTimer = 22;
-      }
-
-      // hazards update
-      for (const h of state.hazards) {
-        h.x += h.vx * dt;
-        h.y += h.vy * dt;
-        h.rot += h.vr * dt;
-      }
-
-      // star pickups update/collect
-      state.stars = state.stars.filter(s => {
-        s.spin += dt * 2.0;
-        s.pulse += dt * 6.0;
-
-        if (Math.hypot(player.x - s.x, player.y - s.y) < player.r + s.r) {
-          player.speedBoostTimer = 5;  // ⭐ speed boost
-          state.score += 50;
-          state.starsCollected += 1;
-          starsEl.textContent = String(state.starsCollected);
-          return false;
-        }
-        return true;
-      });
-
-      // shield pickups update/collect/expire
-      state.shields = state.shields.filter(s => {
-        s.pulse += dt * 4.0;
-        s.life -= dt;
-
-        if (Math.hypot(player.x - s.x, player.y - s.y) < player.r + s.r) {
-          player.shieldTimer = 5; // 🛡 immunity
-          return false;
-        }
-        if (s.life <= 0) return false;
-        return true;
-      });
-
-      // collision (only if shield not active)
-      if (player.shieldTimer <= 0) {
-        for (const h of state.hazards) {
-          if (circleRectCollide(player.x, player.y, player.r, h.x, h.y, h.w, h.h)) {
-            endGame();
-            break;
-          }
-        }
-      }
-    }
-
-    // ---------- Draw ----------
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // subtle background dots
-      ctx.globalAlpha = 0.25;
-      for (let i = 0; i < 80; i++) {
-        const x = (i * 113) % canvas.width;
-        const y = (i * 71 + (state.t * 30)) % canvas.height;
-        ctx.fillRect(x, y, 2, 2);
-      }
-      ctx.globalAlpha = 1;
-
-      // hazards
-      for (const h of state.hazards) {
-        ctx.save();
-        ctx.translate(h.x + h.w / 2, h.y + h.h / 2);
-        ctx.rotate(h.rot);
-
-        ctx.fillStyle = "rgba(255,90,120,0.95)";
-        ctx.fillRect(-h.w / 2, -h.h / 2, h.w, h.h);
-
-        ctx.fillStyle = "rgba(0,0,0,0.25)";
-        ctx.fillRect(-h.w / 2 + 4, -h.h / 2 + 4, h.w - 8, h.h - 8);
-
-        ctx.restore();
-      }
-
-      // ⭐ stars on map
-      for (const s of state.stars) {
-        const pulse = 1 + Math.sin(s.pulse) * 0.12;
-
-        ctx.save();
-        ctx.globalAlpha = 0.22;
-        ctx.fillStyle = "rgba(255,217,102,1)";
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r * 2.0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        ctx.fillStyle = "rgba(255,217,102,0.98)";
-        drawStar(s.x, s.y, s.r * pulse, (s.r * 0.5) * pulse, s.spin);
-      }
-
-      // 🛡 shields on map (NEW icon + flash last 2s)
-      for (const s of state.shields) {
-        drawShieldIcon(s.x, s.y, s.r, s.pulse, s.life);
-      }
-
-      // player
-      ctx.beginPath();
-      ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
-      ctx.fillStyle = (player.speedBoostTimer > 0) ? "#a6ff7c" : "#7cf7ff";
-      ctx.fill();
-
-      // 🛡 active shield ring + FLASH LAST 2s
-      if (player.shieldTimer > 0) {
-        const wobble = 1 + Math.sin(state.t * 8) * 0.05;
-
-        const flashing = player.shieldTimer <= 2;
-        const blink = flashing
-          ? (0.25 + 0.75 * (0.5 + 0.5 * Math.sin(player.shieldTimer * 12 * Math.PI)))
-          : 1;
-
-        ctx.save();
-        ctx.globalAlpha = 0.22 * blink;
-        ctx.fillStyle = "#66b3ff";
-        ctx.beginPath();
-        ctx.arc(player.x, player.y, (player.r + 14) * wobble, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        ctx.globalAlpha = 1 * blink;
-        ctx.beginPath();
-        ctx.arc(player.x, player.y, (player.r + 12) * wobble, 0, Math.PI * 2);
-        ctx.strokeStyle = "#66b3ff";
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
-
-      // overlays
-      if (!state.startedOnce && !state.running && !state.gameOver) {
-        drawOverlay("Dodge the Blocks", "Choose difficulty, then press Enter / Space to start");
-      } else if (state.paused) {
-        drawOverlay("Paused", "Press P to resume");
-      } else if (state.gameOver) {
-        drawOverlay("Game Over", "Press R to restart");
-      }
-    }
-
-    // ---------- Loop ----------
-    function loop(now) {
-      const dt = Math.min(0.033, (now - state.lastTime) / 1000);
-      state.lastTime = now;
-
-      update(dt);
-      draw();
-
-      requestAnimationFrame(loop);
-    }
-
-    // ---------- Input ----------
-    difficultyEl.addEventListener("change", () => {
-      state.difficultyKey = difficultyEl.value;
-      state.startedOnce = false;
-      reset(true);
-    });
-
-    window.addEventListener("keydown", (e) => {
-      const k = e.key.toLowerCase();
-
-      if (k === "enter" || k === " ") {
-        startGame();
-        e.preventDefault();
-        return;
-      }
-
-      if (k === "p") {
-        if (state.startedOnce && !state.gameOver) state.paused = !state.paused;
-        e.preventDefault();
-        return;
-      }
-
-      if (k === "r") {
-        state.startedOnce = false;
-        reset(true);
-        e.preventDefault();
-        return;
-      }
-
-      state.keys.add(k);
-    });
-
-    window.addEventListener("keyup", (e) => {
-      state.keys.delete(e.key.toLowerCase());
-    });
-
-    // ---------- Boot ----------
-    reset(true);
-    requestAnimationFrame(loop);
-  });
-  </script>
+  <script src="js/game.js" defer></script>
 </body>
 </html>
