@@ -1,3 +1,4 @@
+// js/game.js
 document.addEventListener("DOMContentLoaded", () => {
   // ---------- DOM ----------
   const canvas = document.getElementById("game");
@@ -31,6 +32,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const previewCanvas = document.getElementById("preview");
   const pctx = previewCanvas.getContext("2d");
 
+  // Optional jetpack image (put file in: images/jetpack.png)
+  const jetpackImg = new Image();
+  jetpackImg.src = "images/jetpack.png";
+  let jetpackImgReady = false;
+  jetpackImg.onload = () => (jetpackImgReady = true);
+
   // ---------- Helpers ----------
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -53,21 +60,23 @@ document.addEventListener("DOMContentLoaded", () => {
       return fallback;
     }
   }
+
   function saveJSON(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
   }
 
   // ---------- Colours ----------
   const COLOURS = {
-    red:    "#ff4d4d",
+    red: "#ff4d4d",
     orange: "#ff9c3a",
     yellow: "#ffd966",
-    green:  "#7dff7a",
-    blue:   "#7cf7ff",
+    green: "#7dff7a",
+    blue: "#7cf7ff",
     purple: "#a98bff",
-    pink:   "#ff7ad9",
+    pink: "#ff7ad9",
   };
 
+  // Opposites for hazards
   const OPPOSITE = {
     red: "blue",
     blue: "red",
@@ -80,49 +89,51 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const STANDARD_SHAPES = new Set(["orb", "triangle", "diamond", "hex"]);
 
-  function getPlayerColourHex() {
-    if (STANDARD_SHAPES.has(player.shape)) return COLOURS[player.colour] || COLOURS.blue;
-    if (player.shape === "shuriken") return "#cfd8ff";
-    if (player.shape === "ghost") return "#aee8ff";
-    if (player.shape === "rocket") return "#ff6a7d";
-    return COLOURS.blue;
+  // ---------- Difficulty ----------
+  const DIFFICULTIES = {
+    easy: { enemySpeedMult: 0.85, spawnMult: 0.8, scoreMult: 0.9 },
+    normal: { enemySpeedMult: 1.0, spawnMult: 1.0, scoreMult: 1.0 },
+    hard: { enemySpeedMult: 1.2, spawnMult: 1.25, scoreMult: 1.15 },
+  };
+
+  // ---------- Natural randomness for spawns ----------
+  function nextDelay(mean, min, max) {
+    const u = Math.max(1e-6, Math.random());
+    const exp = -Math.log(u) * mean;
+    return clamp(exp, min, max);
   }
 
-  function getHazardColourHex() {
-    const oppKey = OPPOSITE[player.colour] || "red";
-    return COLOURS[oppKey] || "#ff4d4d";
-  }
+  const STAR_MEAN = 11; // ⭐ more frequent
+  const JETPACK_MEAN = 30; // 🚀 old star-ish pace
+  const SHIELD_MEAN = 22; // 🛡
 
-  // ---------- Shop / Characters ----------
+  const nextStarDelay = () => nextDelay(STAR_MEAN, 6, 18);
+  const nextJetpackDelay = () => nextDelay(JETPACK_MEAN, 16, 48);
+  const nextShieldDelay = () => nextDelay(SHIELD_MEAN, 12, 38);
+
+  const STAR_DOUBLE_CHANCE = 0.1;
+  const SHIELD_DOUBLE_CHANCE = 0.04;
+  const JETPACK_DOUBLE_CHANCE = 0.03;
+
+  // ---------- Characters / Shop ----------
   const CHARACTERS = [
-    { id: "orb",      name: "Orb",       cost: 0 },
-    { id: "triangle", name: "Triangle",  cost: 0 },
-    { id: "diamond",  name: "Diamond",   cost: 0 },
-    { id: "hex",      name: "Hex",       cost: 0 },
+    { id: "orb", name: "Orb", cost: 0, symbol: "●" },
+    { id: "triangle", name: "Triangle", cost: 0, symbol: "▲" },
+    { id: "diamond", name: "Diamond", cost: 0, symbol: "◆" },
+    { id: "hex", name: "Hex", cost: 0, symbol: "⬡" },
 
-    { id: "shuriken", name: "Shuriken",  cost: 20 },
-    { id: "ghost",    name: "Ghost Orb", cost: 30 },
-    { id: "rocket",   name: "Rocket",    cost: 40 },
+    { id: "shuriken", name: "Shuriken", cost: 20, symbol: "✦" },
+    { id: "ghost", name: "Ghost Orb", cost: 30, symbol: "☁" },
+    { id: "rocket", name: "Rocket", cost: 40, symbol: "🚀" },
   ];
 
   const DEFAULT_UNLOCKED = ["orb", "triangle", "diamond", "hex"];
   let unlocked = new Set(loadJSON(LS.UNLOCKED, DEFAULT_UNLOCKED));
-  DEFAULT_UNLOCKED.forEach(id => unlocked.add(id));
+  DEFAULT_UNLOCKED.forEach((id) => unlocked.add(id));
 
   function getChar(id) {
-    return CHARACTERS.find(c => c.id === id) || CHARACTERS[0];
+    return CHARACTERS.find((c) => c.id === id) || CHARACTERS[0];
   }
-
-  // ---------- Difficulty ----------
-  const DIFFICULTIES = {
-    easy:   { enemySpeedMult: 0.85, spawnMult: 0.80, scoreMult: 0.90 },
-    normal: { enemySpeedMult: 1.00, spawnMult: 1.00, scoreMult: 1.00 },
-    hard:   { enemySpeedMult: 1.20, spawnMult: 1.25, scoreMult: 1.15 },
-  };
-
-  // ---------- Spawn Rates ----------
-  const STAR_SPAWN_SECONDS = 15;     // ⭐ now more frequent
-  const JETPACK_SPAWN_SECONDS = 30;  // 🚀 jetpack uses old star rate
 
   // ---------- Game State ----------
   const state = {
@@ -141,19 +152,19 @@ document.addEventListener("DOMContentLoaded", () => {
     hazards: [],
     spawnTimer: 0,
 
-    // ⭐ currency pickups (no speed boost now)
+    // ⭐ currency
     stars: [],
-    starTimer: STAR_SPAWN_SECONDS,
+    starTimer: nextStarDelay(),
     runStars: 0,
     walletStars: Number(localStorage.getItem(LS.WALLET) || 0),
 
-    // 🛡 shield pickups
+    // 🛡
     shields: [],
-    shieldSpawnTimer: 22,
+    shieldSpawnTimer: nextShieldDelay(),
 
-    // 🚀 jetpack pickups (speed boost)
+    // 🚀
     jetpacks: [],
-    jetpackSpawnTimer: JETPACK_SPAWN_SECONDS,
+    jetpackSpawnTimer: nextJetpackDelay(),
 
     difficultyKey: "normal",
     difficultyRamp: 1,
@@ -165,18 +176,46 @@ document.addEventListener("DOMContentLoaded", () => {
     r: 14,
     baseSpeed: 260,
 
-    speedBoostTimer: 0, // 🚀 jetpack effect duration
-    shieldTimer: 0,
+    speedBoostTimer: 0, // 🚀
+    shieldTimer: 0, // 🛡
 
     shape: localStorage.getItem(LS.SELECTED) || "orb",
     colour: localStorage.getItem(LS.COLOUR) || "blue",
   };
 
+  // ✅ SHOP selection is separate from equipped character
+  let shopSelectedId = player.shape;
+
   // ---------- UI init ----------
   bestEl.textContent = String(state.best);
   scoreEl.textContent = "0";
   starsEl.textContent = String(state.walletStars);
+
+  difficultyEl.value = state.difficultyKey;
   colourSelect.value = player.colour;
+
+  // ---------- Colour logic ----------
+  function getPlayerColourHex() {
+    if (STANDARD_SHAPES.has(player.shape)) return COLOURS[player.colour] || COLOURS.blue;
+    if (player.shape === "shuriken") return "#cfd8ff";
+    if (player.shape === "ghost") return "#aee8ff";
+    if (player.shape === "rocket") return "#ff6a7d";
+    return COLOURS.blue;
+  }
+
+  function getPreviewColourHex(previewShape) {
+    // Preview uses standard colour if preview is standard; otherwise fixed per special character
+    if (STANDARD_SHAPES.has(previewShape)) return COLOURS[player.colour] || COLOURS.blue;
+    if (previewShape === "shuriken") return "#cfd8ff";
+    if (previewShape === "ghost") return "#aee8ff";
+    if (previewShape === "rocket") return "#ff6a7d";
+    return COLOURS.blue;
+  }
+
+  function getHazardColourHex() {
+    const oppKey = OPPOSITE[player.colour] || "red";
+    return COLOURS[oppKey] || "#ff4d4d";
+  }
 
   // ---------- Wallet ----------
   function addWalletStars(amount) {
@@ -193,7 +232,7 @@ document.addEventListener("DOMContentLoaded", () => {
     syncShopUI();
   }
 
-  // ---------- Shop UI ----------
+  // ---------- Shop / Character select ----------
   function buildCharacterSelect() {
     characterSelect.innerHTML = "";
 
@@ -201,29 +240,21 @@ document.addEventListener("DOMContentLoaded", () => {
       const opt = document.createElement("option");
       opt.value = c.id;
 
-      const lock = unlocked.has(c.id) ? "" : " 🔒";
+      const locked = unlocked.has(c.id) ? "" : " 🔒";
       const price = c.cost > 0 ? ` (${c.cost}★)` : "";
-      const symbol =
-        c.id === "orb" ? " ●" :
-        c.id === "triangle" ? " ▲" :
-        c.id === "diamond" ? " ◆" :
-        c.id === "hex" ? " ⬡" :
-        c.id === "shuriken" ? " ✦" :
-        c.id === "ghost" ? " ☁" :
-        c.id === "rocket" ? " 🚀" : "";
+      opt.textContent = `${c.name} ${c.symbol}${price}${locked}`;
 
-      opt.textContent = `${c.name}${symbol}${price}${lock}`;
-      opt.disabled = !unlocked.has(c.id);
-
+      // ✅ DO NOT disable locked options
       characterSelect.appendChild(opt);
     }
 
-    if (!unlocked.has(player.shape)) player.shape = "orb";
-    characterSelect.value = player.shape;
+    // keep dropdown on current shop selection
+    if (!CHARACTERS.some((c) => c.id === shopSelectedId)) shopSelectedId = "orb";
+    characterSelect.value = shopSelectedId;
   }
 
   function syncShopUI() {
-    const c = getChar(characterSelect.value);
+    const c = getChar(shopSelectedId);
     const isUnlocked = unlocked.has(c.id);
 
     shopNameEl.textContent = c.name;
@@ -232,7 +263,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isUnlocked) {
       buyBtn.disabled = true;
       buyBtn.textContent = "Owned";
-      shopNoteEl.textContent = "Unlocked ✅ Select it from the dropdown.";
+      shopNoteEl.textContent = "Unlocked ✅ Select it from the dropdown (it equips instantly).";
     } else {
       const canAfford = state.walletStars >= c.cost;
       buyBtn.disabled = !canAfford;
@@ -242,7 +273,7 @@ document.addEventListener("DOMContentLoaded", () => {
         : `Collect ${c.cost - state.walletStars} more ★ to unlock.`;
     }
 
-    if (STANDARD_SHAPES.has(characterSelect.value)) {
+    if (STANDARD_SHAPES.has(shopSelectedId)) {
       colourSelect.disabled = false;
       colourSelect.title = "";
     } else {
@@ -283,15 +314,15 @@ document.addEventListener("DOMContentLoaded", () => {
     state.hazards = [];
 
     state.stars = [];
-    state.starTimer = STAR_SPAWN_SECONDS;
+    state.starTimer = nextStarDelay();
+    state.runStars = 0;
 
     state.shields = [];
-    state.shieldSpawnTimer = 22;
+    state.shieldSpawnTimer = nextShieldDelay();
 
     state.jetpacks = [];
-    state.jetpackSpawnTimer = JETPACK_SPAWN_SECONDS;
+    state.jetpackSpawnTimer = nextJetpackDelay();
 
-    state.runStars = 0;
     scoreEl.textContent = "0";
 
     player.x = canvas.width / 2;
@@ -324,6 +355,7 @@ document.addEventListener("DOMContentLoaded", () => {
       localStorage.setItem(LS.BEST, String(s));
       bestEl.textContent = String(s);
     }
+
     syncStartUi();
     syncGameOverUi();
   }
@@ -334,10 +366,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const size = rand(18, 44);
     let x, y;
 
-    if (side === 0) { x = rand(0, canvas.width); y = -size; }
-    else if (side === 1) { x = canvas.width + size; y = rand(0, canvas.height); }
-    else if (side === 2) { x = rand(0, canvas.width); y = canvas.height + size; }
-    else { x = -size; y = rand(0, canvas.height); }
+    if (side === 0) {
+      x = rand(0, canvas.width);
+      y = -size;
+    } else if (side === 1) {
+      x = canvas.width + size;
+      y = rand(0, canvas.height);
+    } else if (side === 2) {
+      x = rand(0, canvas.width);
+      y = canvas.height + size;
+    } else {
+      x = -size;
+      y = rand(0, canvas.height);
+    }
 
     const dx = player.x - x;
     const dy = player.y - y;
@@ -348,7 +389,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const speed = rand(140, 220) * ramp * diff.enemySpeedMult;
 
     state.hazards.push({
-      x, y, w: size, h: size,
+      x,
+      y,
+      w: size,
+      h: size,
       vx: (dx / mag) * speed + rand(-25, 25),
       vy: (dy / mag) * speed + rand(-25, 25),
       rot: rand(0, Math.PI * 2),
@@ -376,12 +420,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 🚀 Jetpack pickup (exists 5s like shield)
   function spawnJetpackPickup() {
     state.jetpacks.push({
       x: rand(60, canvas.width - 60),
       y: rand(60, canvas.height - 60),
-      r: 16,
+      r: 18,
       pulse: rand(0, Math.PI * 2),
       life: 5,
     });
@@ -393,7 +436,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const closestY = clamp(cy, ry, ry + rh);
     const dx = cx - closestX;
     const dy = cy - closestY;
-    return (dx * dx + dy * dy) <= cr * cr;
+    return dx * dx + dy * dy <= cr * cr;
   }
 
   // ---------- Draw helpers ----------
@@ -404,7 +447,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     ctx.beginPath();
     for (let i = 0; i < 10; i++) {
-      const rr = (i % 2 === 0) ? outerR : innerR;
+      const rr = i % 2 === 0 ? outerR : innerR;
       const a = (Math.PI / 5) * i - Math.PI / 2;
       const px = Math.cos(a) * rr;
       const py = Math.sin(a) * rr;
@@ -418,7 +461,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function drawShieldIcon(x, y, r, pulse, life) {
     const flashing = life <= 2;
-    const blink = flashing ? (0.25 + 0.75 * (0.5 + 0.5 * Math.sin(life * 12 * Math.PI))) : 1;
+    const blink = flashing ? 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(life * 12 * Math.PI)) : 1;
     const scale = 1 + Math.sin(pulse) * 0.06;
 
     ctx.save();
@@ -446,66 +489,38 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.globalAlpha = 1;
   }
 
-  // 🚀 Jetpack icon (flashes last 2s)
   function drawJetpackIcon(x, y, r, pulse, life) {
     const flashing = life <= 2;
-    const blink = flashing ? (0.25 + 0.75 * (0.5 + 0.5 * Math.sin(life * 12 * Math.PI))) : 1;
-    const scale = 1 + Math.sin(pulse) * 0.06;
+    const blink = flashing ? 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(life * 12 * Math.PI)) : 1;
+    const bob = Math.sin(pulse * 2) * 2;
 
     ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(scale, scale);
+    ctx.translate(x, y + bob);
 
     // glow
-    ctx.globalAlpha = 0.18 * blink;
+    ctx.globalAlpha = 0.2 * blink;
     ctx.fillStyle = "#ffb24d";
     ctx.beginPath();
-    ctx.arc(0, 0, r * 1.9, 0, Math.PI * 2);
+    ctx.arc(0, 0, r * 1.8, 0, Math.PI * 2);
     ctx.fill();
 
-    // body
     ctx.globalAlpha = 1 * blink;
-    ctx.fillStyle = "#ffb24d";
-    ctx.beginPath();
-    ctx.roundRect(-r * 0.55, -r * 0.7, r * 1.1, r * 1.4, r * 0.35);
-    ctx.fill();
 
-    // side tanks
-    ctx.globalAlpha = 0.95 * blink;
-    ctx.fillStyle = "#ff8a3a";
-    ctx.beginPath();
-    ctx.roundRect(-r * 1.05, -r * 0.5, r * 0.35, r * 1.0, r * 0.18);
-    ctx.roundRect(r * 0.7, -r * 0.5, r * 0.35, r * 1.0, r * 0.18);
-    ctx.fill();
-
-    // nozzle flames (animated)
-    const flame = 0.65 + 0.35 * Math.sin(pulse * 2.5);
-    ctx.globalAlpha = 0.9 * blink;
-    ctx.fillStyle = "#ffd966";
-    ctx.beginPath();
-    ctx.moveTo(-r * 0.25, r * 0.75);
-    ctx.lineTo(0, r * (0.75 + flame));
-    ctx.lineTo(r * 0.25, r * 0.75);
-    ctx.closePath();
-    ctx.fill();
+    // ✅ Use image if available, otherwise fallback symbol
+    if (jetpackImgReady && jetpackImg.naturalWidth > 0) {
+      const w = r * 2.1;
+      const h = r * 2.1;
+      ctx.drawImage(jetpackImg, -w / 2, -h / 2, w, h);
+    } else {
+      ctx.fillStyle = "#ffb24d";
+      ctx.font = `900 ${r * 1.6}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("🚀", 0, 0);
+    }
 
     ctx.restore();
     ctx.globalAlpha = 1;
-  }
-
-  // CanvasRenderingContext2D roundRect fallback (older browsers)
-  if (!CanvasRenderingContext2D.prototype.roundRect) {
-    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
-      const rr = Math.min(r, w / 2, h / 2);
-      this.beginPath();
-      this.moveTo(x + rr, y);
-      this.arcTo(x + w, y, x + w, y + h, rr);
-      this.arcTo(x + w, y + h, x, y + h, rr);
-      this.arcTo(x, y + h, x, y, rr);
-      this.arcTo(x, y, x + w, y, rr);
-      this.closePath();
-      return this;
-    };
   }
 
   function drawCharacter(context, shape, x, y, r, t, color) {
@@ -564,7 +579,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       context.beginPath();
       for (let i = 0; i < 8; i++) {
-        const rr = (i % 2 === 0) ? r : r * 0.45;
+        const rr = i % 2 === 0 ? r : r * 0.45;
         const a = (Math.PI / 4) * i;
         context.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
       }
@@ -646,12 +661,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const cx = previewCanvas.width / 2;
     const cy = previewCanvas.height / 2;
 
-    const previewColor = getPlayerColourHex();
-    drawCharacter(pctx, player.shape, cx, cy, 18, state.t, previewColor);
+    const previewColor = getPreviewColourHex(shopSelectedId);
+    drawCharacter(pctx, shopSelectedId, cx, cy, 18, state.t, previewColor);
 
     if (player.shieldTimer > 0) {
       const flashing = player.shieldTimer <= 2;
-      const blink = flashing ? (0.25 + 0.75 * (0.5 + 0.5 * Math.sin(player.shieldTimer * 12 * Math.PI))) : 1;
+      const blink = flashing ? 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(player.shieldTimer * 12 * Math.PI)) : 1;
 
       pctx.save();
       pctx.globalAlpha = 0.22 * blink;
@@ -687,10 +702,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (player.shieldTimer > 0) player.shieldTimer -= dt;
 
     const holdingShift = state.keys.has("shift");
-    const speedBoostMult = (player.speedBoostTimer > 0) ? 1.6 : 1.0;
+    const speedBoostMult = player.speedBoostTimer > 0 ? 1.6 : 1.0;
     const speed = player.baseSpeed * (holdingShift ? 1.45 : 1.0) * speedBoostMult;
 
-    let mx = 0, my = 0;
+    let mx = 0,
+      my = 0;
     if (state.keys.has("a")) mx -= 1;
     if (state.keys.has("d")) mx += 1;
     if (state.keys.has("w")) my -= 1;
@@ -710,29 +726,32 @@ document.addEventListener("DOMContentLoaded", () => {
     const spawnEvery = 0.9 / diff.spawnMult;
     if (state.spawnTimer <= 0) {
       spawnHazard();
-      if (state.difficultyKey === "hard" && Math.random() < 0.10) spawnHazard();
+      if (state.difficultyKey === "hard" && Math.random() < 0.1) spawnHazard();
       state.spawnTimer = spawnEvery;
     }
 
-    // ⭐ stars spawn (more frequent)
+    // ⭐ stars
     state.starTimer -= dt;
     if (state.starTimer <= 0) {
       spawnStarPickup();
-      state.starTimer = STAR_SPAWN_SECONDS;
+      if (Math.random() < STAR_DOUBLE_CHANCE) spawnStarPickup();
+      state.starTimer = nextStarDelay();
     }
 
-    // 🛡 shield spawn
+    // 🛡 shields
     state.shieldSpawnTimer -= dt;
     if (state.shieldSpawnTimer <= 0) {
       spawnShieldPickup();
-      state.shieldSpawnTimer = 22;
+      if (Math.random() < SHIELD_DOUBLE_CHANCE) spawnShieldPickup();
+      state.shieldSpawnTimer = nextShieldDelay();
     }
 
-    // 🚀 jetpack spawn (old star rate)
+    // 🚀 jetpacks
     state.jetpackSpawnTimer -= dt;
     if (state.jetpackSpawnTimer <= 0) {
       spawnJetpackPickup();
-      state.jetpackSpawnTimer = JETPACK_SPAWN_SECONDS;
+      if (Math.random() < JETPACK_DOUBLE_CHANCE) spawnJetpackPickup();
+      state.jetpackSpawnTimer = nextJetpackDelay();
     }
 
     // hazards update
@@ -742,8 +761,8 @@ document.addEventListener("DOMContentLoaded", () => {
       h.rot += h.vr * dt;
     }
 
-    // ⭐ star pickup collect (NO speed boost anymore)
-    state.stars = state.stars.filter(s => {
+    // ⭐ stars collect
+    state.stars = state.stars.filter((s) => {
       s.spin += dt * 2.0;
       s.pulse += dt * 6.0;
 
@@ -756,8 +775,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return true;
     });
 
-    // 🛡 shield pickup collect/expire
-    state.shields = state.shields.filter(s => {
+    // 🛡 shields collect/expire
+    state.shields = state.shields.filter((s) => {
       s.pulse += dt * 4.0;
       s.life -= dt;
 
@@ -768,13 +787,13 @@ document.addEventListener("DOMContentLoaded", () => {
       return s.life > 0;
     });
 
-    // 🚀 jetpack pickup collect/expire
-    state.jetpacks = state.jetpacks.filter(j => {
+    // 🚀 jetpacks collect/expire
+    state.jetpacks = state.jetpacks.filter((j) => {
       j.pulse += dt * 4.0;
       j.life -= dt;
 
       if (Math.hypot(player.x - j.x, player.y - j.y) < player.r + j.r) {
-        player.speedBoostTimer = 5; // 🚀 speed boost effect
+        player.speedBoostTimer = 7;
         return false;
       }
       return j.life > 0;
@@ -799,7 +818,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.globalAlpha = 0.25;
     for (let i = 0; i < 80; i++) {
       const x = (i * 113) % canvas.width;
-      const y = (i * 71 + (state.t * 30)) % canvas.height;
+      const y = (i * 71 + state.t * 30) % canvas.height;
       ctx.fillRect(x, y, 2, 2);
     }
     ctx.globalAlpha = 1;
@@ -821,7 +840,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ctx.restore();
     }
 
-    // ⭐ stars on map
+    // stars
     for (const s of state.stars) {
       const pulse = 1 + Math.sin(s.pulse) * 0.12;
 
@@ -834,26 +853,26 @@ document.addEventListener("DOMContentLoaded", () => {
       ctx.restore();
 
       ctx.fillStyle = "rgba(255,217,102,0.98)";
-      drawStar(s.x, s.y, s.r * pulse, (s.r * 0.5) * pulse, s.spin);
+      drawStar(s.x, s.y, s.r * pulse, s.r * 0.5 * pulse, s.spin);
     }
 
-    // 🛡 shields
+    // shields
     for (const s of state.shields) drawShieldIcon(s.x, s.y, s.r, s.pulse, s.life);
 
-    // 🚀 jetpacks
+    // jetpacks
     for (const j of state.jetpacks) drawJetpackIcon(j.x, j.y, j.r, j.pulse, j.life);
 
     // player
     const baseCol = getPlayerColourHex();
-    const playerColor = (player.speedBoostTimer > 0) ? "#a6ff7c" : baseCol;
-    drawCharacter(ctx, player.shape, player.x, player.y, player.r, state.t, playerColor);
+    const playerCol = player.speedBoostTimer > 0 ? "#a6ff7c" : baseCol;
+    drawCharacter(ctx, player.shape, player.x, player.y, player.r, state.t, playerCol);
 
-    // shield ring
+    // shield ring (flash last 2s)
     if (player.shieldTimer > 0) {
       const wobble = 1 + Math.sin(state.t * 8) * 0.05;
 
       const flashing = player.shieldTimer <= 2;
-      const blink = flashing ? (0.25 + 0.75 * (0.5 + 0.5 * Math.sin(player.shieldTimer * 12 * Math.PI))) : 1;
+      const blink = flashing ? 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(player.shieldTimer * 12 * Math.PI)) : 1;
 
       ctx.save();
       ctx.globalAlpha = 0.22 * blink;
@@ -870,21 +889,6 @@ document.addEventListener("DOMContentLoaded", () => {
       ctx.lineWidth = 3;
       ctx.stroke();
       ctx.globalAlpha = 1;
-    }
-
-    // pause overlay
-    if (state.paused && state.startedOnce && !state.gameOver) {
-      ctx.save();
-      ctx.fillStyle = "rgba(0,0,0,0.45)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#e8ecff";
-      ctx.textAlign = "center";
-      ctx.font = "800 44px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-      ctx.fillText("Paused", canvas.width / 2, canvas.height / 2 - 8);
-      ctx.font = "400 18px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-      ctx.globalAlpha = 0.9;
-      ctx.fillText("Press P to resume", canvas.width / 2, canvas.height / 2 + 26);
-      ctx.restore();
     }
   }
 
@@ -911,13 +915,14 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   characterSelect.addEventListener("change", () => {
-    const id = characterSelect.value;
-    if (!unlocked.has(id)) {
-      characterSelect.value = player.shape;
-      return;
+    shopSelectedId = characterSelect.value;
+
+    // ✅ Equip immediately ONLY if unlocked
+    if (unlocked.has(shopSelectedId)) {
+      player.shape = shopSelectedId;
+      localStorage.setItem(LS.SELECTED, shopSelectedId);
     }
-    player.shape = id;
-    localStorage.setItem(LS.SELECTED, id);
+
     syncShopUI();
     drawPreview();
   });
@@ -929,7 +934,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   buyBtn.addEventListener("click", () => {
-    const c = getChar(characterSelect.value);
+    const c = getChar(shopSelectedId);
     if (unlocked.has(c.id)) return;
     if (state.walletStars < c.cost) return;
 
@@ -937,10 +942,13 @@ document.addEventListener("DOMContentLoaded", () => {
     unlocked.add(c.id);
     saveJSON(LS.UNLOCKED, Array.from(unlocked));
 
-    buildCharacterSelect();
-    characterSelect.value = c.id;
+    // ✅ after purchase: equip it
     player.shape = c.id;
     localStorage.setItem(LS.SELECTED, c.id);
+
+    shopSelectedId = c.id;
+    buildCharacterSelect();
+    characterSelect.value = c.id;
 
     syncShopUI();
     drawPreview();
