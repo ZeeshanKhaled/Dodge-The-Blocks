@@ -1,12 +1,15 @@
 // js/game.js
 document.addEventListener("DOMContentLoaded", () => {
+  // ---------- Canvas ----------
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
 
+  // ---------- HUD ----------
   const scoreEl = document.getElementById("score");
   const bestEl = document.getElementById("best");
   const starsEl = document.getElementById("stars");
 
+  // ---------- Controls / UI ----------
   const difficultyEl = document.getElementById("difficulty");
   const characterSelect = document.getElementById("characterSelect");
   const colourSelect = document.getElementById("colourSelect");
@@ -34,81 +37,109 @@ document.addEventListener("DOMContentLoaded", () => {
   // ✅ controller status (from HTML)
   const padStatusEl = document.getElementById("padStatus");
 
-  // ✅ Fullscreen (fullscreen ONLY the game stage)
+  // ---------- Helpers ----------
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  // ---------- Fullscreen (target ONLY the game stage) ----------
   const fsBtn = document.getElementById("fsBtn");
-  const gameStageEl = document.getElementById("gameStage"); // add id="gameStage" on <section class="game-stage">
+  const fsTarget = document.querySelector(".game-stage") || canvas;
+
   function setFsUi() {
     if (!fsBtn) return;
     const on = !!document.fullscreenElement;
     fsBtn.textContent = on ? "Exit Fullscreen" : "Fullscreen";
   }
+
   async function toggleFullscreen() {
     try {
-      if (!document.fullscreenElement) {
-        // ✅ fullscreen the game stage (canvas + overlays), not the whole page
-        await (gameStageEl || document.documentElement).requestFullscreen();
-      } else {
-        await document.exitFullscreen();
-      }
+      if (!document.fullscreenElement) await fsTarget.requestFullscreen();
+      else await document.exitFullscreen();
     } catch {
       // ignore
     }
     setFsUi();
   }
+
   if (fsBtn) fsBtn.addEventListener("click", toggleFullscreen);
   document.addEventListener("fullscreenchange", setFsUi);
 
-  // --- Images ---
-  const jetpackImg = new Image();
-  jetpackImg.src = "Images/jetpack.png";
-  let jetpackImgReady = false;
-  jetpackImg.onload = () => (jetpackImgReady = true);
+  // ✅ Fullscreen HUD (top-left overlay INSIDE the stage)
+  const fsHud = document.createElement("div");
+  fsHud.id = "fsHud";
+  fsHud.style.position = "absolute";
+  fsHud.style.left = "16px";
+  fsHud.style.top = "16px";
+  fsHud.style.zIndex = "50";
+  fsHud.style.padding = "10px 14px";
+  fsHud.style.borderRadius = "999px";
+  fsHud.style.font = "600 14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+  fsHud.style.letterSpacing = "0.2px";
+  fsHud.style.color = "rgba(255,255,255,0.92)";
+  fsHud.style.background = "rgba(0,0,0,0.35)";
+  fsHud.style.border = "1px solid rgba(255,255,255,0.12)";
+  fsHud.style.boxShadow = "0 12px 30px rgba(0,0,0,0.35)";
+  fsHud.style.backdropFilter = "blur(10px)";
+  fsHud.style.webkitBackdropFilter = "blur(10px)";
+  fsHud.style.display = "none"; // show only in fullscreen
 
-  const ghostImg = new Image();
-  ghostImg.src = "Images/Ghost.png";
-  let ghostImgReady = false;
-  ghostImg.onload = () => (ghostImgReady = true);
+  if (getComputedStyle(fsTarget).position === "static") {
+    fsTarget.style.position = "relative";
+  }
+  fsTarget.appendChild(fsHud);
 
-  const rocketCharImg = new Image();
-  rocketCharImg.src = "Images/Rocket.png";
-  let rocketCharImgReady = false;
-  rocketCharImg.onload = () => (rocketCharImgReady = true);
+  function updateFullscreenHud() {
+    const on = document.fullscreenElement === fsTarget;
+    if (!on) {
+      fsHud.style.display = "none";
+      return;
+    }
 
-  // ✅ New character images
-  const ufoImg = new Image();
-  ufoImg.src = "Images/UFO.png";
-  let ufoImgReady = false;
-  ufoImg.onload = () => (ufoImgReady = true);
+    fsHud.style.display = "inline-flex";
+    fsHud.style.gap = "10px";
 
-  const footballImg = new Image();
-  footballImg.src = "Images/Football.png";
-  let footballImgReady = false;
-  footballImg.onload = () => (footballImgReady = true);
+    const score = Math.floor(state.score);
+    const best = state.best;
+    const stars = state.walletStars;
 
-  const basketballImg = new Image();
-  basketballImg.src = "Images/Basketball.png";
-  let basketballImgReady = false;
-  basketballImg.onload = () => (basketballImgReady = true);
+    const diffKey = (state.difficultyKey || "normal").toLowerCase();
+    const diffLabel = diffKey.charAt(0).toUpperCase() + diffKey.slice(1);
 
-  const golfballImg = new Image();
-  golfballImg.src = "Images/Golfball.png";
-  let golfballImgReady = false;
-  golfballImg.onload = () => (golfballImgReady = true);
+    fsHud.textContent = `Score: ${score}   Best: ${best}   Stars: ${stars}   Difficulty: ${diffLabel}`;
+  }
 
-  const diaSwordImg = new Image();
-  diaSwordImg.src = "Images/DiaSword.png";
-  let diaSwordImgReady = false;
-  diaSwordImg.onload = () => (diaSwordImgReady = true);
+  document.addEventListener("fullscreenchange", updateFullscreenHud);
 
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const rand = (a, b) => a + Math.random() * (b - a);
+  // ---------- Images ----------
+  // Utility: load image + ready flag
+  function makeImg(src) {
+    const img = new Image();
+    img.src = src;
+    let ready = false;
+    img.onload = () => (ready = true);
+    return { img, get ready() { return ready; } };
+  }
 
-  // ✅ Controller (Gamepad API)
-  const gamepadState = {
-    ax: 0,
-    ay: 0,
-    deadzone: 0.18,
-  };
+  // pickups
+  const jetpack = makeImg("Images/jetpack.png");
+
+  // characters
+  const ghost = makeImg("Images/Ghost.png");
+  const rocketChar = makeImg("Images/Rocket.png");
+  const ufo = makeImg("Images/UFO.png");
+  const football = makeImg("Images/Football.png");
+  const basketball = makeImg("Images/Basketball.png");
+  const golfball = makeImg("Images/Golfball.png");
+  const diaSword = makeImg("Images/DiaSword.png");
+
+  // ✅ powerup icons
+  const doublePoints = makeImg("Images/DoublePoints.png");
+  const timeSlow = makeImg("Images/TimeSlow.png");
+  const magnet = makeImg("Images/Magnet.png");
+  const shrink = makeImg("Images/Shrink.png");
+
+  // ---------- Controller (Gamepad API) ----------
+  const gamepadState = { ax: 0, ay: 0, deadzone: 0.18 };
 
   function readGamepad() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -148,6 +179,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // ---------- Storage ----------
   const LS = {
     BEST: "dodge_best",
     WALLET: "dodge_wallet_stars",
@@ -170,6 +202,7 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.setItem(key, JSON.stringify(value));
   }
 
+  // ---------- Colours ----------
   const COLOURS = {
     red: "#ff4d4d",
     orange: "#ff9c3a",
@@ -192,12 +225,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const STANDARD_SHAPES = new Set(["orb", "triangle", "diamond", "hex"]);
 
+  // ---------- Difficulty ----------
   const DIFFICULTIES = {
     easy: { enemySpeedMult: 0.85, spawnMult: 0.8, scoreMult: 0.9 },
     normal: { enemySpeedMult: 1.0, spawnMult: 1.0, scoreMult: 1.0 },
     hard: { enemySpeedMult: 1.2, spawnMult: 1.25, scoreMult: 1.15 },
   };
 
+  // ---------- Natural randomness ----------
   function nextDelay(mean, min, max) {
     const u = Math.max(1e-6, Math.random());
     const exp = -Math.log(u) * mean;
@@ -208,14 +243,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const JETPACK_MEAN = 30;
   const SHIELD_MEAN = 22;
 
+  // powerups (rare)
+  const DOUBLE_MEAN = 70;
+  const SLOW_MEAN = 55;
+  const MAGNET_MEAN = 60;
+  const SHRINK_MEAN = 50;
+
   const nextStarDelay = () => nextDelay(STAR_MEAN, 6, 18);
   const nextJetpackDelay = () => nextDelay(JETPACK_MEAN, 16, 48);
   const nextShieldDelay = () => nextDelay(SHIELD_MEAN, 12, 38);
+
+  const nextDoubleDelay = () => nextDelay(DOUBLE_MEAN, 45, 120);
+  const nextSlowDelay = () => nextDelay(SLOW_MEAN, 35, 100);
+  const nextMagnetDelay = () => nextDelay(MAGNET_MEAN, 35, 110);
+  const nextShrinkDelay = () => nextDelay(SHRINK_MEAN, 28, 95);
 
   const STAR_DOUBLE_CHANCE = 0.1;
   const SHIELD_DOUBLE_CHANCE = 0.04;
   const JETPACK_DOUBLE_CHANCE = 0.03;
 
+  // ---------- Characters / Shop ----------
   const CHARACTERS = [
     { id: "orb", name: "Orb", cost: 0, symbol: "●" },
     { id: "triangle", name: "Triangle", cost: 0, symbol: "▲" },
@@ -241,26 +288,46 @@ document.addEventListener("DOMContentLoaded", () => {
     return CHARACTERS.find((c) => c.id === id) || CHARACTERS[0];
   }
 
+  // ---------- State ----------
   const state = {
     running: false,
     paused: false,
     gameOver: false,
     startedOnce: false,
+
     t: 0,
     score: 0,
     best: Number(localStorage.getItem(LS.BEST) || 0),
     lastTime: performance.now(),
+
     keys: new Set(),
+
     hazards: [],
     spawnTimer: 0,
+
     stars: [],
     starTimer: nextStarDelay(),
     runStars: 0,
     walletStars: Number(localStorage.getItem(LS.WALLET) || 0),
+
     shields: [],
     shieldSpawnTimer: nextShieldDelay(),
+
     jetpacks: [],
     jetpackSpawnTimer: nextJetpackDelay(),
+
+    doubles: [],
+    doubleSpawnTimer: nextDoubleDelay(),
+
+    slows: [],
+    slowSpawnTimer: nextSlowDelay(),
+
+    magnets: [],
+    magnetSpawnTimer: nextMagnetDelay(),
+
+    shrinks: [],
+    shrinkSpawnTimer: nextShrinkDelay(),
+
     difficultyKey: "normal",
     difficultyRamp: 1,
   };
@@ -268,16 +335,28 @@ document.addEventListener("DOMContentLoaded", () => {
   const player = {
     x: canvas.width / 2,
     y: canvas.height / 2,
+
+    baseR: 14,
     r: 14,
+
     baseSpeed: 260,
-    speedBoostTimer: 0,
-    shieldTimer: 0,
+
+    speedBoostTimer: 0, // jetpack
+    shieldTimer: 0, // shield
+
+    // powerups
+    doubleTimer: 0,
+    slowTimer: 0,
+    magnetTimer: 0,
+    shrinkTimer: 0,
+
     shape: localStorage.getItem(LS.SELECTED) || "orb",
     colour: localStorage.getItem(LS.COLOUR) || "blue",
   };
 
   let shopSelectedId = player.shape;
 
+  // ---------- UI init ----------
   bestEl.textContent = String(state.best);
   scoreEl.textContent = "0";
   starsEl.textContent = String(state.walletStars);
@@ -285,6 +364,7 @@ document.addEventListener("DOMContentLoaded", () => {
   difficultyEl.value = state.difficultyKey;
   colourSelect.value = player.colour;
 
+  // ---------- Colour logic ----------
   function getPlayerColourHex() {
     if (STANDARD_SHAPES.has(player.shape)) return COLOURS[player.colour] || COLOURS.blue;
     if (player.shape === "shuriken") return "#cfd8ff";
@@ -316,6 +396,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return COLOURS[oppKey] || "#ff4d4d";
   }
 
+  // ---------- Wallet ----------
   function addWalletStars(amount) {
     state.walletStars += amount;
     starsEl.textContent = String(state.walletStars);
@@ -330,16 +411,20 @@ document.addEventListener("DOMContentLoaded", () => {
     syncShopUI();
   }
 
+  // ---------- Shop ----------
   function buildCharacterSelect() {
     characterSelect.innerHTML = "";
     for (const c of CHARACTERS) {
       const opt = document.createElement("option");
       opt.value = c.id;
+
       const locked = unlocked.has(c.id) ? "" : " 🔒";
       const price = c.cost > 0 ? ` (${c.cost}★)` : "";
       opt.textContent = `${c.name} ${c.symbol}${price}${locked}`;
+
       characterSelect.appendChild(opt);
     }
+
     if (!CHARACTERS.some((c) => c.id === shopSelectedId)) shopSelectedId = "orb";
     characterSelect.value = shopSelectedId;
   }
@@ -359,9 +444,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const canAfford = state.walletStars >= c.cost;
       buyBtn.disabled = !canAfford;
       buyBtn.textContent = canAfford ? "Buy" : "Need Stars";
-      shopNoteEl.textContent = canAfford
-        ? "Buy to unlock permanently."
-        : `Collect ${c.cost - state.walletStars} more ★ to unlock.`;
+      shopNoteEl.textContent = canAfford ? "Buy to unlock permanently." : `Collect ${c.cost - state.walletStars} more ★ to unlock.`;
     }
 
     if (STANDARD_SHAPES.has(shopSelectedId)) {
@@ -373,6 +456,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // ---------- Overlays ----------
   function syncStartUi() {
     const show = !state.startedOnce && !state.running && !state.gameOver;
     startUi.style.display = show ? "flex" : "none";
@@ -392,26 +476,53 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // ---------- Core ----------
   function reset(toStartScreen = true) {
     state.paused = false;
     state.gameOver = false;
+
     state.t = 0;
     state.score = 0;
     state.spawnTimer = 0;
+
     state.hazards = [];
+
     state.stars = [];
     state.starTimer = nextStarDelay();
     state.runStars = 0;
+
     state.shields = [];
     state.shieldSpawnTimer = nextShieldDelay();
+
     state.jetpacks = [];
     state.jetpackSpawnTimer = nextJetpackDelay();
+
+    state.doubles = [];
+    state.doubleSpawnTimer = nextDoubleDelay();
+
+    state.slows = [];
+    state.slowSpawnTimer = nextSlowDelay();
+
+    state.magnets = [];
+    state.magnetSpawnTimer = nextMagnetDelay();
+
+    state.shrinks = [];
+    state.shrinkSpawnTimer = nextShrinkDelay();
+
     scoreEl.textContent = "0";
 
     player.x = canvas.width / 2;
     player.y = canvas.height / 2;
+
     player.speedBoostTimer = 0;
     player.shieldTimer = 0;
+
+    player.doubleTimer = 0;
+    player.slowTimer = 0;
+    player.magnetTimer = 0;
+    player.shrinkTimer = 0;
+
+    player.r = player.baseR;
 
     state.running = !toStartScreen;
 
@@ -443,6 +554,7 @@ document.addEventListener("DOMContentLoaded", () => {
     syncGameOverUi();
   }
 
+  // ---------- Spawning ----------
   function spawnHazard() {
     const side = Math.floor(rand(0, 4));
     const size = rand(18, 44);
@@ -512,6 +624,20 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function spawnDoublePickup() {
+    state.doubles.push({ x: rand(60, canvas.width - 60), y: rand(60, canvas.height - 60), r: 16, pulse: rand(0, Math.PI * 2), life: 7 });
+  }
+  function spawnSlowPickup() {
+    state.slows.push({ x: rand(60, canvas.width - 60), y: rand(60, canvas.height - 60), r: 16, pulse: rand(0, Math.PI * 2), life: 7 });
+  }
+  function spawnMagnetPickup() {
+    state.magnets.push({ x: rand(60, canvas.width - 60), y: rand(60, canvas.height - 60), r: 16, pulse: rand(0, Math.PI * 2), life: 7 });
+  }
+  function spawnShrinkPickup() {
+    state.shrinks.push({ x: rand(60, canvas.width - 60), y: rand(60, canvas.height - 60), r: 16, pulse: rand(0, Math.PI * 2), life: 7 });
+  }
+
+  // ---------- Collision ----------
   function circleRectCollide(cx, cy, cr, rx, ry, rw, rh) {
     const closestX = clamp(cx, rx, rx + rw);
     const closestY = clamp(cy, ry, ry + rh);
@@ -520,6 +646,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return dx * dx + dy * dy <= cr * cr;
   }
 
+  // ---------- Draw helpers ----------
   function drawStar(x, y, outerR, innerR, rotation) {
     ctx.save();
     ctx.translate(x, y);
@@ -585,10 +712,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     ctx.globalAlpha = 1 * blink;
 
-    if (jetpackImgReady && jetpackImg.naturalWidth > 0) {
-      const w = r * 2.1;
-      const h = r * 2.1;
-      ctx.drawImage(jetpackImg, -w / 2, -h / 2, w, h);
+    if (jetpack.ready && jetpack.img.naturalWidth > 0) {
+      const size = r * 2.1;
+      ctx.drawImage(jetpack.img, -size / 2, -size / 2, size, size);
     } else {
       ctx.fillStyle = "#ffb24d";
       ctx.font = `900 ${r * 1.6}px system-ui`;
@@ -601,10 +727,50 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.globalAlpha = 1;
   }
 
-  function drawImageChar(context, img, ready, x, y, targetH) {
-    if (!ready || img.naturalWidth <= 0) return false;
-    const w = targetH * (img.naturalWidth / img.naturalHeight);
-    context.drawImage(img, x - w / 2, y - targetH / 2, w, targetH);
+  // ✅ icon powerup renderer (uses images)
+  function drawPowerIcon(x, y, r, pulse, life, imgObj, fallbackLabel, bg) {
+    const flashing = life <= 2;
+    const blink = flashing ? 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(life * 12 * Math.PI)) : 1;
+    const bob = Math.sin(pulse * 2) * 2;
+
+    ctx.save();
+    ctx.translate(x, y + bob);
+
+    // outer glow
+    ctx.globalAlpha = 0.22 * blink;
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.9, 0, Math.PI * 2);
+    ctx.fill();
+
+    // inner bubble
+    ctx.globalAlpha = 0.95 * blink;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // icon
+    ctx.globalAlpha = 1 * blink;
+    if (imgObj?.ready && imgObj.img.naturalWidth > 0) {
+      const size = r * 2.0;
+      ctx.drawImage(imgObj.img, -size / 2, -size / 2, size, size);
+    } else {
+      ctx.fillStyle = "rgba(0,0,0,0.65)";
+      ctx.font = `900 ${r * 0.9}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(fallbackLabel, 0, 0);
+    }
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- Character draw ----------
+  function drawImageChar(context, imgObj, x, y, targetH) {
+    if (!imgObj?.ready || imgObj.img.naturalWidth <= 0) return false;
+    const w = targetH * (imgObj.img.naturalWidth / imgObj.img.naturalHeight);
+    context.drawImage(imgObj.img, x - w / 2, y - targetH / 2, w, targetH);
     return true;
   }
 
@@ -683,49 +849,49 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (shape === "ghost") {
-      if (drawImageChar(context, ghostImg, ghostImgReady, x, y, r * 2.6)) {
+      if (drawImageChar(context, ghost, x, y, r * 2.6)) {
         context.restore();
         return;
       }
     }
 
     if (shape === "rocket") {
-      if (drawImageChar(context, rocketCharImg, rocketCharImgReady, x, y, r * 2.8)) {
+      if (drawImageChar(context, rocketChar, x, y, r * 2.8)) {
         context.restore();
         return;
       }
     }
 
     if (shape === "ufo") {
-      if (drawImageChar(context, ufoImg, ufoImgReady, x, y, r * 2.7)) {
+      if (drawImageChar(context, ufo, x, y, r * 2.7)) {
         context.restore();
         return;
       }
     }
 
     if (shape === "football") {
-      if (drawImageChar(context, footballImg, footballImgReady, x, y, r * 2.55)) {
+      if (drawImageChar(context, football, x, y, r * 2.55)) {
         context.restore();
         return;
       }
     }
 
     if (shape === "basketball") {
-      if (drawImageChar(context, basketballImg, basketballImgReady, x, y, r * 2.55)) {
+      if (drawImageChar(context, basketball, x, y, r * 2.55)) {
         context.restore();
         return;
       }
     }
 
     if (shape === "golfball") {
-      if (drawImageChar(context, golfballImg, golfballImgReady, x, y, r * 2.55)) {
+      if (drawImageChar(context, golfball, x, y, r * 2.55)) {
         context.restore();
         return;
       }
     }
 
     if (shape === "diasword") {
-      if (drawImageChar(context, diaSwordImg, diaSwordImgReady, x, y, r * 3.1)) {
+      if (drawImageChar(context, diaSword, x, y, r * 3.1)) {
         context.restore();
         return;
       }
@@ -734,6 +900,7 @@ document.addEventListener("DOMContentLoaded", () => {
     context.restore();
   }
 
+  // ---------- Preview ----------
   function drawPreview() {
     pctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
 
@@ -759,13 +926,13 @@ document.addEventListener("DOMContentLoaded", () => {
       pctx.globalAlpha = 0.22 * blink;
       pctx.fillStyle = "#66b3ff";
       pctx.beginPath();
-      pctx.arc(cx, cy, 18 + 18, 0, Math.PI * 2);
+      pctx.arc(cx, cy, 36, 0, Math.PI * 2);
       pctx.fill();
       pctx.restore();
 
       pctx.globalAlpha = 1 * blink;
       pctx.beginPath();
-      pctx.arc(cx, cy, 18 + 16, 0, Math.PI * 2);
+      pctx.arc(cx, cy, 34, 0, Math.PI * 2);
       pctx.strokeStyle = "#66b3ff";
       pctx.lineWidth = 3;
       pctx.stroke();
@@ -773,6 +940,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // ---------- Update ----------
   function update(dt) {
     if (!state.running || state.paused || state.gameOver) return;
 
@@ -783,37 +951,47 @@ document.addEventListener("DOMContentLoaded", () => {
     state.t += dt;
     state.difficultyRamp = 1 + state.t / 18;
 
-    state.score += dt * 10 * diff.scoreMult;
-    scoreEl.textContent = String(Math.floor(state.score));
-
+    // timers
     if (player.speedBoostTimer > 0) player.speedBoostTimer -= dt;
     if (player.shieldTimer > 0) player.shieldTimer -= dt;
+
+    if (player.doubleTimer > 0) player.doubleTimer -= dt;
+    if (player.slowTimer > 0) player.slowTimer -= dt;
+    if (player.magnetTimer > 0) player.magnetTimer -= dt;
+    if (player.shrinkTimer > 0) player.shrinkTimer -= dt;
+
+    // shrink effect
+    player.r = player.shrinkTimer > 0 ? player.baseR * 0.65 : player.baseR;
+
+    // score
+    const scoreMult = player.doubleTimer > 0 ? 2 : 1;
+    state.score += dt * 10 * diff.scoreMult * scoreMult;
+    scoreEl.textContent = String(Math.floor(state.score));
 
     const holdingShift = state.keys.has("shift");
     const speedBoostMult = player.speedBoostTimer > 0 ? 1.6 : 1.0;
     const speed = player.baseSpeed * (holdingShift ? 1.45 : 1.0) * speedBoostMult;
 
-    let kx = 0,
-      ky = 0;
+    // keyboard intent
+    let kx = 0, ky = 0;
     if (state.keys.has("a")) kx -= 1;
     if (state.keys.has("d")) kx += 1;
     if (state.keys.has("w")) ky -= 1;
     if (state.keys.has("s")) ky += 1;
 
+    // controller intent
     let gx = gamepadState.ax;
     let gy = gamepadState.ay;
 
+    // choose stronger input
     const km = Math.hypot(kx, ky);
     const gm = Math.hypot(gx, gy);
 
-    let mx = 0,
-      my = 0;
+    let mx = 0, my = 0;
     if (gm > km) {
-      mx = gx;
-      my = gy;
+      mx = gx; my = gy;
     } else if (km > 0) {
-      mx = kx / km;
-      my = ky / km;
+      mx = kx / km; my = ky / km;
     }
 
     if (mx || my) {
@@ -824,6 +1002,7 @@ document.addEventListener("DOMContentLoaded", () => {
     player.x = clamp(player.x, player.r, canvas.width - player.r);
     player.y = clamp(player.y, player.r, canvas.height - player.r);
 
+    // hazards spawn
     state.spawnTimer -= dt;
     const spawnEvery = 0.9 / diff.spawnMult;
     if (state.spawnTimer <= 0) {
@@ -832,6 +1011,7 @@ document.addEventListener("DOMContentLoaded", () => {
       state.spawnTimer = spawnEvery;
     }
 
+    // stars spawn
     state.starTimer -= dt;
     if (state.starTimer <= 0) {
       spawnStarPickup();
@@ -839,6 +1019,7 @@ document.addEventListener("DOMContentLoaded", () => {
       state.starTimer = nextStarDelay();
     }
 
+    // shields spawn
     state.shieldSpawnTimer -= dt;
     if (state.shieldSpawnTimer <= 0) {
       spawnShieldPickup();
@@ -846,6 +1027,7 @@ document.addEventListener("DOMContentLoaded", () => {
       state.shieldSpawnTimer = nextShieldDelay();
     }
 
+    // jetpacks spawn
     state.jetpackSpawnTimer -= dt;
     if (state.jetpackSpawnTimer <= 0) {
       spawnJetpackPickup();
@@ -853,18 +1035,61 @@ document.addEventListener("DOMContentLoaded", () => {
       state.jetpackSpawnTimer = nextJetpackDelay();
     }
 
-    for (const h of state.hazards) {
-      h.x += h.vx * dt;
-      h.y += h.vy * dt;
-      h.rot += h.vr * dt;
+    // powerups spawn
+    state.doubleSpawnTimer -= dt;
+    if (state.doubleSpawnTimer <= 0) {
+      spawnDoublePickup();
+      state.doubleSpawnTimer = nextDoubleDelay();
     }
+
+    state.slowSpawnTimer -= dt;
+    if (state.slowSpawnTimer <= 0) {
+      spawnSlowPickup();
+      state.slowSpawnTimer = nextSlowDelay();
+    }
+
+    state.magnetSpawnTimer -= dt;
+    if (state.magnetSpawnTimer <= 0) {
+      spawnMagnetPickup();
+      state.magnetSpawnTimer = nextMagnetDelay();
+    }
+
+    state.shrinkSpawnTimer -= dt;
+    if (state.shrinkSpawnTimer <= 0) {
+      spawnShrinkPickup();
+      state.shrinkSpawnTimer = nextShrinkDelay();
+    }
+
+    // slow time affects hazards only
+    const hazardTime = player.slowTimer > 0 ? 0.45 : 1.0;
+    for (const h of state.hazards) {
+      h.x += h.vx * dt * hazardTime;
+      h.y += h.vy * dt * hazardTime;
+      h.rot += h.vr * dt * hazardTime;
+    }
+
+    // stars update + magnet
+    const magnetOn = player.magnetTimer > 0;
+    const magnetRadius = 220;
+    const magnetPull = 520;
 
     state.stars = state.stars.filter((s) => {
       s.spin += dt * 2.0;
       s.pulse += dt * 6.0;
 
+      if (magnetOn) {
+        const dx = player.x - s.x;
+        const dy = player.y - s.y;
+        const d = Math.hypot(dx, dy) || 1;
+        if (d < magnetRadius) {
+          const pull = (1 - d / magnetRadius) * magnetPull;
+          s.x += (dx / d) * pull * dt;
+          s.y += (dy / d) * pull * dt;
+        }
+      }
+
       if (Math.hypot(player.x - s.x, player.y - s.y) < player.r + s.r) {
-        state.score += 50;
+        state.score += 50 * scoreMult;
         state.runStars += 1;
         addWalletStars(1);
         return false;
@@ -872,6 +1097,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return true;
     });
 
+    // shields collect/expire
     state.shields = state.shields.filter((s) => {
       s.pulse += dt * 4.0;
       s.life -= dt;
@@ -883,6 +1109,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return s.life > 0;
     });
 
+    // jetpacks collect/expire
     state.jetpacks = state.jetpacks.filter((j) => {
       j.pulse += dt * 4.0;
       j.life -= dt;
@@ -894,6 +1121,52 @@ document.addEventListener("DOMContentLoaded", () => {
       return j.life > 0;
     });
 
+    // powerups collect/expire
+    state.doubles = state.doubles.filter((p) => {
+      p.pulse += dt * 4.0;
+      p.life -= dt;
+
+      if (Math.hypot(player.x - p.x, player.y - p.y) < player.r + p.r) {
+        player.doubleTimer = 10;
+        return false;
+      }
+      return p.life > 0;
+    });
+
+    state.slows = state.slows.filter((p) => {
+      p.pulse += dt * 4.0;
+      p.life -= dt;
+
+      if (Math.hypot(player.x - p.x, player.y - p.y) < player.r + p.r) {
+        player.slowTimer = 7;
+        return false;
+      }
+      return p.life > 0;
+    });
+
+    state.magnets = state.magnets.filter((p) => {
+      p.pulse += dt * 4.0;
+      p.life -= dt;
+
+      if (Math.hypot(player.x - p.x, player.y - p.y) < player.r + p.r) {
+        player.magnetTimer = 10;
+        return false;
+      }
+      return p.life > 0;
+    });
+
+    state.shrinks = state.shrinks.filter((p) => {
+      p.pulse += dt * 4.0;
+      p.life -= dt;
+
+      if (Math.hypot(player.x - p.x, player.y - p.y) < player.r + p.r) {
+        player.shrinkTimer = 8;
+        return false;
+      }
+      return p.life > 0;
+    });
+
+    // collision if no shield
     if (player.shieldTimer <= 0) {
       for (const h of state.hazards) {
         if (circleRectCollide(player.x, player.y, player.r, h.x, h.y, h.w, h.h)) {
@@ -904,9 +1177,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // ---------- Draw ----------
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // background dots
     ctx.globalAlpha = 0.25;
     for (let i = 0; i < 80; i++) {
       const x = (i * 113) % canvas.width;
@@ -917,6 +1192,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const hazardColor = getHazardColourHex();
 
+    // hazards
     for (const h of state.hazards) {
       ctx.save();
       ctx.translate(h.x + h.w / 2, h.y + h.h / 2);
@@ -931,6 +1207,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ctx.restore();
     }
 
+    // stars
     for (const s of state.stars) {
       const pulse = 1 + Math.sin(s.pulse) * 0.12;
 
@@ -946,13 +1223,24 @@ document.addEventListener("DOMContentLoaded", () => {
       drawStar(s.x, s.y, s.r * pulse, s.r * 0.5 * pulse, s.spin);
     }
 
+    // shields
     for (const s of state.shields) drawShieldIcon(s.x, s.y, s.r, s.pulse, s.life);
+
+    // jetpacks
     for (const j of state.jetpacks) drawJetpackIcon(j.x, j.y, j.r, j.pulse, j.life);
 
+    // powerups (use images)
+    for (const p of state.doubles) drawPowerIcon(p.x, p.y, p.r, p.pulse, p.life, doublePoints, "2x", "#ffd966");
+    for (const p of state.slows) drawPowerIcon(p.x, p.y, p.r, p.pulse, p.life, timeSlow, "⏱", "#a98bff");
+    for (const p of state.magnets) drawPowerIcon(p.x, p.y, p.r, p.pulse, p.life, magnet, "🧲", "#7cf7ff");
+    for (const p of state.shrinks) drawPowerIcon(p.x, p.y, p.r, p.pulse, p.life, shrink, "⇲", "#7dff7a");
+
+    // player
     const baseCol = getPlayerColourHex();
     const playerCol = player.speedBoostTimer > 0 ? "#a6ff7c" : baseCol;
     drawCharacter(ctx, player.shape, player.x, player.y, player.r, state.t, playerCol);
 
+    // shield ring
     if (player.shieldTimer > 0) {
       const wobble = 1 + Math.sin(state.t * 8) * 0.05;
 
@@ -977,6 +1265,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // ---------- Loop ----------
   function loop(now) {
     const dt = Math.min(0.033, (now - state.lastTime) / 1000);
     state.lastTime = now;
@@ -987,10 +1276,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     syncStartUi();
     syncGameOverUi();
+    updateFullscreenHud();
 
     requestAnimationFrame(loop);
   }
 
+  // ---------- Events ----------
   difficultyEl.addEventListener("change", () => {
     state.difficultyKey = difficultyEl.value;
     state.startedOnce = false;
@@ -1051,6 +1342,7 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
 
+    // exit fullscreen with ESC
     if (k === "escape" && document.fullscreenElement) {
       document.exitFullscreen();
       e.preventDefault();
@@ -1083,6 +1375,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.keys.delete(e.key.toLowerCase());
   });
 
+  // ---------- Boot ----------
   buildCharacterSelect();
   syncShopUI();
 
@@ -1091,6 +1384,7 @@ document.addEventListener("DOMContentLoaded", () => {
   syncStartUi();
   syncGameOverUi();
   setFsUi();
+  updateFullscreenHud();
 
   requestAnimationFrame(loop);
 });
