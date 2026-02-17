@@ -469,3 +469,77 @@ canvas#preview{
   opacity: 0.8;
   text-align: center;
 }
+/* =========================
+   Fullscreen behaviour
+   ========================= */
+
+/* When the stage goes fullscreen, make it fill the screen */
+.game-stage:fullscreen{
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  border-radius: 0;
+  display: grid;
+  place-items: center;
+  background: #0b0f19;
+}
+
+/* Canvas scales to fit the fullscreen stage nicely */
+.game-stage:fullscreen canvas#game{
+  width: min(100vw, calc(100vh * (900 / 520)));
+  height: auto;
+  max-height: 100vh;
+  border-radius: 0;
+}
+
+/* =========================
+   Fullscreen HUD look
+   (if your JS creates #fsHud)
+   ========================= */
+#fsHud{
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  z-index: 50;
+  display: none;             /* JS will toggle to flex in fullscreen */
+  pointer-events: none;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Optional: if you later switch JS to use classes instead of inline styles */
+#fsHud .hud-pill,
+#fsHud .buff-chip{
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 999px;
+}
+
+#fsHud .hud-pill{
+  padding: 10px 14px;
+  font: 600 14px system-ui,-apple-system,Segoe UI,Roboto,Arial;
+  letter-spacing: 0.2px;
+  color: rgba(255,255,255,0.92);
+}
+
+#fsHud .buff-chip{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+#fsHud .buff-chip img{
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+#fsHud .buff-chip .t{
+  font: 700 13px system-ui,-apple-system,Segoe UI,Roboto,Arial;
+  color: rgba(255,255,255,0.95);
+  min-width: 18px;
+}
