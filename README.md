@@ -6,9 +6,7 @@ You control your chosen character inside the arena, avoid hazards, collect stars
 
 ## Play the Game
 
-> Add your live game link here
->
-> **Play now:** `[Insert live link here]`
+> **Play now:** [Dodge the Blocks](https://zeeshankhaled.github.io/Dodge-The-Blocks/)
 
 ## What the Game Is
 
